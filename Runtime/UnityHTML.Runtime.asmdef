@@ -1,0 +1,23 @@
+{
+  "name": "UnityHTML.Runtime",
+  "rootNamespace": "UnityHTML.Runtime",
+  "references": [
+    "ReactUnity",
+    "ReactUnity.UGUI",
+    "LibYoga",
+    "UnityEngine.UI",
+    "Unity.TextMeshPro"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "DOTween.dll",
+    "DOTweenPro.dll"
+  ],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

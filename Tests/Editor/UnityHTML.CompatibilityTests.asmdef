@@ -1,0 +1,23 @@
+{
+  "name": "UnityHTML.CompatibilityTests",
+  "rootNamespace": "UnityHTML.Tests",
+  "references": [
+    "ReactUnity",
+    "ReactUnity.UGUI",
+    "UnityHTML.Runtime",
+    "UnityEngine.UI",
+    "Unity.TextMeshPro"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "DOTween.dll",
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

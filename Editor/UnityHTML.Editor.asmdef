@@ -1,0 +1,12 @@
+{
+  "name": "UnityHTML.Editor",
+  "rootNamespace": "UnityHTML.Editor",
+  "references": [
+    "UnityEngine.UI",
+    "Unity.TextMeshPro"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": true
+}
