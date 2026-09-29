@@ -1,0 +1,84 @@
+﻿<view className="home-menu-shell">
+  <view className="background-veil"></view>
+
+  <view className="shell-content">
+    <view className="brand-panel">
+      <view className="kicker-row">
+        <view className="kicker-mark"></view>
+        <text className="kicker">TURN-BASED STRATEGY</text>
+      </view>
+
+      <text className="brand-title">MOYVA</text>
+      <text className="brand-subtitle">Shape a realm that remembers every decision.</text>
+
+      <view className="brand-rule">
+        <view className="brand-rule-accent"></view>
+      </view>
+
+      <text className="brand-copy">Build your kingdom, gather allies, and lead your people through a living procedural world.</text>
+
+      <view className="world-status">
+        <view className="status-dot"></view>
+        <view className="status-copy">
+          <text className="status-label">WORLD PREVIEW</text>
+          <text className="status-value">A new realm is waiting beyond the menu.</text>
+        </view>
+      </view>
+    </view>
+
+    <view className="navigation-panel">
+      <view className="navigation-heading">
+        <text className="navigation-kicker">MAIN MENU</text>
+        <text className="navigation-title">Choose your path</text>
+      </view>
+
+      <view className="navigation-list">
+        <button className="menu-button primary" onClick="Globals.moyvaMenu.Play()">
+          <text className="button-index">01</text>
+          <view className="button-content">
+            <text className="button-title">PLAY</text>
+            <text className="button-copy">Create a local campaign</text>
+          </view>
+          <text className="button-arrow">></text>
+        </button>
+
+        <button className="menu-button" onClick="Globals.moyvaMenu.Continue()">
+          <text className="button-index">02</text>
+          <view className="button-content">
+            <text className="button-title">CONTINUE</text>
+            <text className="button-copy">Return to your saved realm</text>
+          </view>
+          <text className="button-arrow">></text>
+        </button>
+
+        <button className="menu-button" onClick="Globals.moyvaMenu.Multiplayer()">
+          <text className="button-index">03</text>
+          <view className="button-content">
+            <text className="button-title">MULTIPLAYER</text>
+            <text className="button-copy">Create or join a shared world</text>
+          </view>
+          <text className="button-arrow">></text>
+        </button>
+
+        <button className="menu-button" onClick="Globals.moyvaMenu.Settings()">
+          <text className="button-index">04</text>
+          <view className="button-content">
+            <text className="button-title">SETTINGS</text>
+            <text className="button-copy">Audio, graphics and controls</text>
+          </view>
+          <text className="button-arrow">></text>
+        </button>
+
+        <button className="quit-button" onClick="Globals.moyvaMenu.Exit()">
+          <text className="quit-label">QUIT TO DESKTOP</text>
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <view className="footer">
+    <text className="footer-copy">A WORLD SHAPED BY YOUR DECISIONS</text>
+    <view className="footer-line"></view>
+    <text className="footer-copy">MOYVA</text>
+  </view>
+</view>
