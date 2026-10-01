@@ -9,6 +9,14 @@ namespace UnityHTML.Runtime
         IUnityHtmlMotion Motion { get; }
 
         /// <summary>
+        /// Raised when markup requests a "back" navigation — backdrop clicks
+        /// (<c>data-bg-close</c>/<c>&lt;backdrop close="true"&gt;</c>) and any
+        /// script calling <c>Globals.ui.Back()</c>. The presenter decides what
+        /// back means: close a dialog, pop a screen, exit to menu.
+        /// </summary>
+        event Action BackRequested;
+
+        /// <summary>
         /// Wheel sensitivity, easing, inertia and reduced-motion settings applied
         /// to every scroll control this host renders. Changing it re-applies the
         /// settings to already-mounted controls; scroll positions are untouched.

@@ -288,7 +288,7 @@ namespace UnityHTML.Tests
             var rootObject = CreateRoot();
             using var host = new UnityHtmlHost();
             var existingDetachedIds = Object.FindObjectsByType<ReactElement>(
-                    FindObjectsInactive.Include)
+                    FindObjectsInactive.Include, FindObjectsSortMode.None)
                 .Where(element => element != null && element.transform.parent == null)
                 .Select(element => element.GetEntityId())
                 .ToHashSet();
@@ -303,7 +303,7 @@ namespace UnityHTML.Tests
                         "UnityHtmlDetachedScroll"));
 
                 var leaked = Object.FindObjectsByType<ReactElement>(
-                        FindObjectsInactive.Include)
+                        FindObjectsInactive.Include, FindObjectsSortMode.None)
                     .Where(element =>
                         element != null &&
                         element.transform.parent == null &&

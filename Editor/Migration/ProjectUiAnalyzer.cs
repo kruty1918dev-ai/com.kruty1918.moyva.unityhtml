@@ -65,11 +65,22 @@ namespace UnityHTML.Editor.Migration
                 unityVersion = Application.unityVersion
             };
 
+            var settings = UnityHtmlAnalyzerSettings.Load();
+
             foreach (var scene in EditorBuildSettings.scenes)
                 if (scene.enabled)
                     inventory.buildScenes.Add(scene.path);
 
-            var scenePaths = AssetDatabase.FindAssets("t:Scene", new[] { "Assets/Moyva" })
+            // Scenes are opened in Single mode below — that discards unsaved
+            // changes in any currently open scene. Offer to save first; a
+            // cancel aborts the scan instead of silently losing work.
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+            {
+                inventory.diagnostics.Add("Aborted: unsaved scene changes were not saved or discarded.");
+                return inventory;
+            }
+
+            var scenePaths = AssetDatabase.FindAssets("t:Scene", settings.sceneRoots)
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .OrderBy(path => path, StringComparer.Ordinal)
                 .ToArray();
@@ -86,8 +97,8 @@ namespace UnityHTML.Editor.Migration
                 EditorSceneManager.RestoreSceneManagerSetup(originalSetup);
             }
 
-            AnalyzePrefabs(inventory);
-            AnalyzeScripts(inventory);
+            AnalyzePrefabs(inventory, settings);
+            AnalyzeScripts(inventory, settings);
             return inventory;
         }
 
@@ -97,12 +108,18 @@ namespace UnityHTML.Editor.Migration
             try
             {
                 var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
-                foreach (var canvas in FindSceneComponents<Canvas>(scene))
+                var canvases = FindSceneComponents<Canvas>(scene);
+                foreach (var canvas in canvases)
                     document.canvases.Add(AnalyzeCanvas(canvas, scenePath));
 
                 var eventSystems = FindSceneComponents<EventSystem>(scene).Count;
                 if (eventSystems > 0)
                     document.diagnostics.Add($"EventSystem: {eventSystems}");
+
+                CollectInboundReferences(
+                    FindSceneComponents<Component>(scene),
+                    canvases.Select(canvas => canvas.transform).ToList(),
+                    document);
             }
             catch (Exception exception)
             {
@@ -112,9 +129,64 @@ namespace UnityHTML.Editor.Migration
             return document;
         }
 
-        private static void AnalyzePrefabs(ProjectUiInventory inventory)
+        // References INTO a UI root from the rest of the scene — the "who still
+        // points at this canvas" half of the reference map. externalReferences
+        // covers outbound; without this a canvas can look removable while a
+        // gameplay script still holds it.
+        private static void CollectInboundReferences(
+            List<Component> sceneComponents, List<Transform> uiRoots, UiDocumentInventory document)
         {
-            var prefabPaths = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Moyva" })
+            if (uiRoots.Count == 0)
+                return;
+
+            var canvasByRoot = new Dictionary<Transform, UiCanvasInventory>();
+            for (var i = 0; i < uiRoots.Count && i < document.canvases.Count; i++)
+                canvasByRoot[uiRoots[i]] = document.canvases[i];
+
+            foreach (var component in sceneComponents)
+            {
+                if (component == null || component.transform == null)
+                    continue;
+                if (uiRoots.Any(root => component.transform == root || component.transform.IsChildOf(root)))
+                    continue;
+
+                SerializedObject serializedObject;
+                try { serializedObject = new SerializedObject(component); }
+                catch { continue; }
+
+                var iterator = serializedObject.GetIterator();
+                var enterChildren = true;
+                while (iterator.Next(enterChildren))
+                {
+                    enterChildren = true;
+                    if (iterator.propertyType != SerializedPropertyType.ObjectReference ||
+                        iterator.objectReferenceValue == null || iterator.propertyPath == "m_Script")
+                        continue;
+
+                    var targetTransform = GetTransform(iterator.objectReferenceValue);
+                    if (targetTransform == null)
+                        continue;
+
+                    foreach (var root in uiRoots)
+                    {
+                        if (targetTransform != root && !targetTransform.IsChildOf(root))
+                            continue;
+                        canvasByRoot[root].inboundReferences.Add(new UiReferenceInventory
+                        {
+                            objectPath = GetHierarchyPath(component.transform),
+                            component = component.GetType().FullName,
+                            field = iterator.propertyPath,
+                            target = FormatObject(iterator.objectReferenceValue)
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static void AnalyzePrefabs(ProjectUiInventory inventory, UnityHtmlAnalyzerSettings settings)
+        {
+            var prefabPaths = AssetDatabase.FindAssets("t:Prefab", settings.prefabRoots)
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .OrderBy(path => path, StringComparer.Ordinal);
 
@@ -131,11 +203,24 @@ namespace UnityHTML.Editor.Migration
                         continue;
 
                     var document = new UiDocumentInventory { assetPath = prefabPath, kind = "Prefab" };
+                    var uiRoots = new List<Transform>();
                     if (canvases.Length == 0)
+                    {
                         document.canvases.Add(AnalyzeUiRoot(root, prefabPath, "Inherited"));
+                        uiRoots.Add(root.transform);
+                    }
                     else
+                    {
                         foreach (var canvas in canvases)
+                        {
                             document.canvases.Add(AnalyzeCanvas(canvas, prefabPath));
+                            uiRoots.Add(canvas.transform);
+                        }
+                    }
+
+                    // Inbound references from the rest of the prefab.
+                    CollectInboundReferences(
+                        root.GetComponentsInChildren<Component>(true).ToList(), uiRoots, document);
                     inventory.prefabs.Add(document);
                 }
                 catch (Exception exception)
@@ -196,14 +281,15 @@ namespace UnityHTML.Editor.Migration
                 classes.Add("C runtime-generated UI candidate");
             if (components.OfType<Canvas>().Any(canvas => canvas.renderMode == RenderMode.WorldSpace)) classes.Add("D world-space UI");
             if (inventory.externalReferences.Count > 0) classes.Add("E external serialized references");
+            if (inventory.inboundReferences.Count > 0) classes.Add("G inbound references — still pointed at");
             if (PrefabUtility.IsPartOfPrefabAsset(root) || PrefabUtility.IsPartOfPrefabInstance(root)) classes.Add("F UI prefab");
             if (inventory.customComponents.Count > 0) classes.Add("H gameplay/presentation script coupling");
             return string.Join("; ", classes);
         }
 
-        private static void AnalyzeScripts(ProjectUiInventory inventory)
+        private static void AnalyzeScripts(ProjectUiInventory inventory, UnityHtmlAnalyzerSettings settings)
         {
-            var scriptPaths = AssetDatabase.FindAssets("t:MonoScript", new[] { "Assets/Moyva/Scripts" })
+            var scriptPaths = AssetDatabase.FindAssets("t:MonoScript", settings.scriptRoots)
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .OrderBy(path => path, StringComparer.Ordinal);
 
@@ -336,6 +422,8 @@ namespace UnityHTML.Editor.Migration
             text.AppendLine($"UI prefabs: {inventory.prefabs.Count}");
             text.AppendLine($"Scripts with serialized UI fields: {inventory.scriptsWithUiReferences.Count}");
             text.AppendLine($"Scripts creating UI candidates: {inventory.scriptsCreatingUi.Count}");
+            foreach (var diagnostic in inventory.diagnostics)
+                text.AppendLine($"- Diagnostic: {diagnostic}");
             text.AppendLine();
 
             AppendDocuments(text, "Scenes", inventory.scenes);
@@ -369,7 +457,9 @@ namespace UnityHTML.Editor.Migration
                 {
                     text.AppendLine($"- `{canvas.hierarchyPath}` | {canvas.renderMode} | {canvas.classification}");
                     text.AppendLine($"  Components: {string.Join(", ", canvas.components.Select(item => $"{ShortType(item.type)}={item.count}"))}");
-                    text.AppendLine($"  Persistent events: {canvas.persistentEvents.Count}; external refs: {canvas.externalReferences.Count}; custom components: {canvas.customComponents.Count}");
+                    text.AppendLine($"  Persistent events: {canvas.persistentEvents.Count}; external refs: {canvas.externalReferences.Count}; inbound refs: {canvas.inboundReferences.Count}; custom components: {canvas.customComponents.Count}");
+                    foreach (var inbound in canvas.inboundReferences)
+                        text.AppendLine($"  <- {inbound.objectPath} ({inbound.component}).{inbound.field} -> {inbound.target}");
                 }
                 text.AppendLine();
             }

@@ -81,8 +81,43 @@ namespace UnityHTML.Runtime
         private static XmlElement Parse(string html)
         {
             var document = new XmlDocument { XmlResolver = null };
-            document.LoadXml("<root>" + html + "</root>");
+            try
+            {
+                document.LoadXml("<root>" + html + "</root>");
+            }
+            catch (XmlException exception)
+            {
+                // The wrapper shifts reported line numbers by one — the
+                // injected "<root>" shares line 1 with the start of markup.
+                string excerpt = ExtractLine(html, exception.LineNumber - 1);
+                throw new XmlException(
+                    $"Markup parse error at line {Math.Max(1, exception.LineNumber - 1)}, " +
+                    $"position {exception.LinePosition}: {exception.Message}" +
+                    (excerpt != null ? $"\n    > {excerpt.Trim()}" : string.Empty),
+                    exception);
+            }
+            UnityHtmlAttributeExpander.Expand(document.DocumentElement);
             return document.DocumentElement;
+        }
+
+        private static string ExtractLine(string text, int line)
+        {
+            if (string.IsNullOrEmpty(text) || line < 1)
+                return null;
+
+            var current = 1;
+            var start = 0;
+            for (var i = 0; i <= text.Length; i++)
+            {
+                if (i == text.Length || text[i] == '\n')
+                {
+                    if (current == line)
+                        return text.Substring(start, i - start);
+                    current++;
+                    start = i + 1;
+                }
+            }
+            return null;
         }
 
         private void Reconcile(IContainerComponent parent, List<Node> nodes, XmlNode xml, Node owner = null)

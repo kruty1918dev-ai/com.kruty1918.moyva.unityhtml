@@ -5,27 +5,119 @@
 
 UnityHTML is Moyva's thin runtime wrapper around ReactUnity UGUI. It mounts HTML and CSS stored as Unity `TextAsset` files into an existing `RectTransform`.
 
+> **Markup contract:** markup is parsed as XML (`XmlDocument`), not HTML5.
+> Every tag must be closed (`<img />`, not `<img>`), every attribute must
+> have a quoted value (`disabled="true"`, not `disabled`), and `&` must be
+> escaped as `&amp;`. Web UI knowledge transfers; arbitrary web markup does
+> not. The supported tag/CSS surface is the table under [Markup](#markup).
+
 ## Install (Unity Package Manager)
 
-Package Manager → **+** → **Add package from git URL**:
+Three steps, all required:
 
-```
-https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git
-```
+1. **DOTween (free).** Motion runs on DOTween — install the free version
+   into `Assets/Plugins/Demigiant/DOTween` (Asset Store package or the
+   downloadable unitypackage from Demigiant). DOTween *Pro* is not needed.
+2. **ReactUnity** — commit-pinned git dependencies. Add to
+   `Packages/manifest.json` (these exact commits are the tested set):
 
-or in `Packages/manifest.json`:
+   ```json
+   "com.reactunity.core": "https://github.com/ReactUnity/core.git#8c4caa95f49b45e8fb7bb1f833eaa08adaa31496",
+   "com.reactunity.jint": "https://github.com/ReactUnity/core.git#5788df06c9525ffbd24b7f2ef55b9c638386e808",
+   "com.reactunity.quickjs": "https://github.com/ReactUnity/core.git#6b28051d738504283bff89bd7584eaf1287debec",
+   ```
 
-```json
-"com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.1.0"
-```
+3. **UnityHTML itself:**
 
-Dependencies: `com.reactunity.core`, `com.reactunity.jint`,
-`com.reactunity.quickjs` (install those first from the ReactUnity repo),
-`com.unity.ugui`.
+   ```json
+   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.1.0"
+   ```
+
+   or Package Manager → **+** → **Add package from git URL** with the same
+   URL (no tag = latest `main`).
+
+`com.unity.ugui` and TextMeshPro ship with Unity — no action needed.
 
 CSS presentation assets should be authored as plain CSS text with a Unity text extension, for example `HomeMenuShell.css.txt`. This keeps the file readable while ensuring Unity imports it as a populated `TextAsset`.
 
 The script engine is selected per platform: QuickJS everywhere except Linux (editor and standalone), which uses Jint. Keep `on*` callbacks to short expressions that behave identically on both engines — call into a C# bridge object rather than writing logic in markup.
+
+## Quick start — empty scene to a working button
+
+1. Create `Assets/UI/HomeShell.html` (imports as `TextAsset`):
+
+   ```html
+   <view className="shell">
+       <text>Hello</text>
+       <button onClick="Globals.menu.Clicked()"><text>Play</text></button>
+   </view>
+   ```
+
+2. Create `Assets/UI/HomeShell.css.txt`:
+
+   ```css
+   .shell { display: flex; flex-direction: column; gap: 12px;
+            width: 400px; height: 300px; margin: auto;
+            background-color: rgb(20, 20, 28); }
+   ```
+
+3. Bootstrap MonoBehaviour — creates `Canvas` + `EventSystem` if missing,
+   mounts, disposes:
+
+   ```csharp
+   using System.Collections.Generic;
+   using UnityEngine;
+   using UnityEngine.EventSystems;
+   using UnityEngine.UI;
+   using UnityHTML.Runtime;
+
+   public sealed class MenuScreen : MonoBehaviour
+   {
+       [SerializeField] private TextAsset html;
+       [SerializeField] private TextAsset css;
+
+       private UnityHtmlHost _host;
+
+       private void Start()
+       {
+           // Dedicated container: Mount destroys all children of the root.
+           var canvas = new GameObject("MenuCanvas",
+               typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+           canvas.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
+           if (FindFirstObjectByType<EventSystem>() == null)
+               new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+
+           _host = new UnityHtmlHost();
+           var result = _host.Mount(
+               canvas.GetComponent<RectTransform>(),
+               UnityHtmlDocument.FromTextAssets(html, css, "HomeShell"),
+               new Dictionary<string, object> { ["menu"] = new MenuBridge() });
+           if (!result.Succeeded) Debug.LogError(result.ErrorMessage);
+       }
+
+       private void OnDestroy() => _host?.Dispose();
+
+       private sealed class MenuBridge
+       {
+           public void Clicked() => Debug.Log("Play pressed");
+       }
+   }
+   ```
+
+4. Assign the assets, press Play — `Play` logs through the C# bridge.
+
+### Troubleshooting
+
+- **Blank screen, no error:** check `UnityHtmlMountResult.Succeeded` /
+  `ErrorMessage` — mount failures are returned, not thrown.
+- **`...XmlException...` in ErrorMessage:** markup violated the XML
+  contract above — unclosed tag, unquoted attribute, raw `&`.
+- **Nothing reacts to clicks:** missing `EventSystem` (the bootstrap above
+  creates one) or another `Canvas` sorting over the host.
+- **Black/invisible text:** TMP font not resolved — expose a font via the
+  `moyvaFont` global, or project TMP default font asset.
+- **Package doesn't resolve:** `git` must be on `PATH` for UPM git
+  dependencies; on Linux the editor uses the Jint engine, not QuickJS.
 
 ## Runtime Lifecycle
 
@@ -39,7 +131,12 @@ var result = host.Mount(root, document, new Dictionary<string, object>
 });
 ```
 
-`Mount` replaces any live document. `Unmount()` (also called by `Dispose()`, mount failure and scene unload through the owning presenter) tears it down completely:
+`Mount` on a live host first attempts an in-place reconciliation of the
+mounted document (preserving elements, focus and scroll); when the document
+or root is incompatible it falls back to a fresh mount that destroys all
+children of the passed root. `Unmount()` (also called by `Dispose()`, mount
+failure and scene unload through the owning presenter) tears it down
+completely:
 
 - every `on*` listener remover runs — handlers swap, they never stack;
 - active motion tweens are killed and an in-flight declarative exit still fires `ExitFinished` exactly once;
@@ -71,11 +168,58 @@ The tags below are the tested contract surface (upstream ReactUnity registers mo
 | `label` | text | `for="#id"` activates the target control exactly once per click |
 | `input` | `TMP_InputField` | centered single-line text; `value`, `placeholder`; `onChange(string)`, `onEndEdit`, `onSubmit` |
 | `slider` | `Slider` + value text | `value`, `min`/`max`, `wholeNumbers`, `format` (`decimal1` default, `decimal2`, `integer`, `percent`), `suffix`, `disabled`; `onChange(float)`, `onBeginChange`, `onEndChange` |
-| `select` | `TMP_Dropdown` | `options="A&#124;B&#124;C"` (pipe-separated), `value` (index), `disabled`; `onChange(int)` |
+| `select` | `TMP_Dropdown` | `options="A&#124;B&#124;C"` (pipe-separated), `value` (index), `disabled`, `max-height`, `item-height`, `searchable`, `option-icons="a.png,b.png"` (per-index, media-provider resolved); `onChange(int)` always reports the original option index even while a search filter is active |
 | `scroll` | `MoyvaSmoothScrollRect` | wheel accumulation fixed; configured per host via `IUnityHtmlHost.ScrollSettings` |
 | `image`/`img` | `Image` | `source` resolves through the media provider |
 | `icon` | icon font text | |
 | `a`/`anchor` | link | |
+| `backdrop` | fullscreen background stack | `src`, `dim`, `color`, `close="true"` (click → `Globals.ui.Back()`); declared children render above the layers |
+| `scrollbar` | `Scrollbar` | `horizontal`, `inverted`; link to a scroll with `data-for="#scrollId"` |
+| `mask` | `Mask` | clips children; `show-graphic="true"` draws the stencil |
+| `rectmask` | `RectMask2D` | rect clipping; `softness="x,y"` for soft edges |
+| `rawimage` | `RawImage` | upstream tag — texture/RenderTexture source |
+| `progress` | filled bar | `value`, `max`, `track-color`, `fill-color`, `low-threshold`+`low-color`, `smooth` (tweened fill), `origin="left|right"` |
+| `radial` | radial fill | same as `progress` plus `clockwise`, `origin="top|right|bottom|left"` — cooldown/cast bars |
+| `switch` | `Toggle` + sliding knob | `value`, `disabled`, `on-color`, `off-color`, `knob-color`; `onChange(bool)` |
+| `panel` | `view` alias | `role` → `data-motion-role`, `bg="screen"` → backdrop |
+| `spacer` | sized `view` | `size="8"` / `8x16` / `flex` |
+| `divider` | 1px separator | `orientation="v"`, `inset`, `color` |
+
+### Layout & behavior attributes
+
+| Attribute | Effect |
+| --- | --- |
+| `data-bg="screen"` | injects a fullscreen `<backdrop>` sibling behind the element; options: `data-bg-src`, `data-bg-dim`, `data-bg-color`, `data-bg-close` |
+| `data-anchor="top-left|top|top-right|left|center|right|bottom-left|bottom|bottom-right"` | absolute positioning shorthand |
+| `data-stretch` / `data-center` | fill-parent / centered shorthands |
+| `data-platform="mobile|desktop|console"` | subtree is removed at parse time on non-matching platforms — never instantiated |
+| `data-orientation="landscape|portrait"` | element activates/deactivates with device orientation, preserving state |
+| `data-safe-area="all|top|bottom|left|right"` | notch/cutout padding in pixels, updates on rotation |
+| `data-raycast="off"` | disables `raycastTarget` on the element's graphics |
+| `data-alpha`, `data-interactable`, `data-blocks-raycasts` | CanvasGroup control without markup-visible wrapper |
+| `data-shadow="x,y[,#color]"` / `data-outline="x,y[,#color]"` | uGUI Shadow/Outline on the element's graphics |
+| `data-gradient="#top,#bottom"` (or 4 corners) | TMP vertex gradient on the element's texts |
+| `data-slice` / `data-tiled` | `Image.type` Sliced/Tiled |
+| `data-fill="linear|horizontal|vertical|radial|radial90|radial180"` | `Image.type` Filled — with `data-fill-amount`, `data-fill-origin`, `data-fill-clockwise` (cooldowns, bars) |
+| `data-haptic="light|medium|heavy|selection"` | haptic pulse on click — no-op on platforms without haptics; backend swappable via `UnityHtmlHaptics.Provider` |
+
+### Input
+
+Mounting in play mode auto-creates an `EventSystem` with the best input
+module — `InputSystemUIInputModule` when the Input System package is
+installed (optional dependency, resolved by reflection), otherwise the
+legacy `StandaloneInputModule`. While a host is mounted:
+
+- `UnityHtmlInput.ActiveDevice` / `DeviceChanged` track keyboard+mouse,
+  gamepad and touch usage.
+- `UnityHtmlInput.BackRequested` fires on Escape, Android back and gamepad
+  B — every mounted host forwards it to its own `BackRequested`, the same
+  event `Globals.ui.Back()` raises.
+- `Globals.haptics.Play("medium")` is available in markup scripts.
+| `data-nav-up/down/left/right="#id"` | explicit `Selectable` navigation targets |
+| `data-nav-wrap` | first/last selectable in the container cycle vertically |
+| `data-first-selected` / `data-autofocus` | element takes EventSystem selection on mount (once — rerenders don't steal focus) |
+| `data-return-focus` | container remembers the selection when it appears and restores it when removed — a dialog returns focus to its opener |
 
 ### Events
 
@@ -94,6 +238,10 @@ Pointer: `onClick`/`onPointerClick`, `onPointerEnter`/`onMouseEnter`, `onPointer
 ## Globals
 
 Globals are an explicit allow-list of C# objects exposed to the script engine. Keep bridge objects narrow and route actions through existing application services. Do not expose gameplay stores or mutable domain services directly to HTML.
+
+Two globals are built in: `Globals.motion` (motion bridge) and
+`Globals.ui` — `ui.Back()` raises `IUnityHtmlHost.BackRequested`, which the
+presenter maps to "close dialog / pop screen / exit".
 
 ## Motion
 

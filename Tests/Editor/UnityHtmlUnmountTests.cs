@@ -39,7 +39,7 @@ namespace UnityHTML.Tests
         public void MountUnmountCycles_LeaveNoHandlersOrLayersBehind()
         {
             int baselineHandlers = UnityEngine.Object
-                .FindObjectsByType<PointerEnterHandler>().Length;
+                .FindObjectsByType<PointerEnterHandler>(FindObjectsSortMode.None).Length;
 
             for (int i = 0; i < 50; i++)
             {
@@ -52,15 +52,15 @@ namespace UnityHTML.Tests
                 Assert.That(_root.transform.childCount, Is.EqualTo(0),
                     $"cycle {i} left live children under the root");
                 Assert.That(UnityEngine.Object
-                        .FindObjectsByType<UnityHtmlTooltipLayer>().Length,
+                        .FindObjectsByType<UnityHtmlTooltipLayer>(FindObjectsSortMode.None).Length,
                     Is.EqualTo(0), $"cycle {i} leaked the tooltip layer");
                 Assert.That(UnityEngine.Object
-                        .FindObjectsByType<UnityHtmlTooltipTarget>().Length,
+                        .FindObjectsByType<UnityHtmlTooltipTarget>(FindObjectsSortMode.None).Length,
                     Is.EqualTo(0), $"cycle {i} leaked tooltip targets");
             }
 
             Assert.That(UnityEngine.Object
-                    .FindObjectsByType<PointerEnterHandler>().Length,
+                    .FindObjectsByType<PointerEnterHandler>(FindObjectsSortMode.None).Length,
                 Is.EqualTo(baselineHandlers), "event handler components accumulated");
         }
 

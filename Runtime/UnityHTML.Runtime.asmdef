@@ -13,8 +13,7 @@
   "allowUnsafeCode": false,
   "overrideReferences": true,
   "precompiledReferences": [
-    "DOTween.dll",
-    "DOTweenPro.dll"
+    "DOTween.dll"
   ],
   "autoReferenced": true,
   "defineConstraints": [],

@@ -10,10 +10,49 @@ namespace UnityHTML.Editor.Migration
         public string unityVersion;
         public List<string> buildScenes = new();
         public List<string> discoveredScenes = new();
+        public List<string> diagnostics = new();
         public List<UiDocumentInventory> scenes = new();
         public List<UiDocumentInventory> prefabs = new();
         public List<UiScriptReferenceInventory> scriptsWithUiReferences = new();
         public List<UiScriptCreationInventory> scriptsCreatingUi = new();
+    }
+
+    /// <summary>
+    /// Scan roots loaded from ProjectSettings/UnityHTMLAnalyzer.json —
+    /// <c>{"sceneRoots":["Assets/UI"],"prefabRoots":[...],"scriptRoots":[...]}</c>.
+    /// Missing file scans all of Assets.
+    /// </summary>
+    [Serializable]
+    internal sealed class UnityHtmlAnalyzerSettings
+    {
+        public string[] sceneRoots = { "Assets" };
+        public string[] prefabRoots = { "Assets" };
+        public string[] scriptRoots = { "Assets" };
+
+        internal static UnityHtmlAnalyzerSettings Load()
+        {
+            const string path = "ProjectSettings/UnityHTMLAnalyzer.json";
+            try
+            {
+                if (System.IO.File.Exists(path))
+                {
+                    var settings = UnityEngine.JsonUtility.FromJson<UnityHtmlAnalyzerSettings>(
+                        System.IO.File.ReadAllText(path));
+                    if (settings != null)
+                    {
+                        settings.sceneRoots = Valid(settings.sceneRoots);
+                        settings.prefabRoots = Valid(settings.prefabRoots);
+                        settings.scriptRoots = Valid(settings.scriptRoots);
+                        return settings;
+                    }
+                }
+            }
+            catch { /* fall through to defaults */ }
+            return new UnityHtmlAnalyzerSettings();
+        }
+
+        private static string[] Valid(string[] roots)
+            => roots is { Length: > 0 } ? roots : new[] { "Assets" };
     }
 
     [Serializable]
@@ -35,6 +74,7 @@ namespace UnityHTML.Editor.Migration
         public List<UiTypeCount> components = new();
         public List<UiEventInventory> persistentEvents = new();
         public List<UiReferenceInventory> externalReferences = new();
+        public List<UiReferenceInventory> inboundReferences = new();
         public List<string> customComponents = new();
     }
 

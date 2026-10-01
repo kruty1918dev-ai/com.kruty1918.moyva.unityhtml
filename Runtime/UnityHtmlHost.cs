@@ -30,6 +30,17 @@ namespace UnityHTML.Runtime
         private string _autofocusedElementId;
         private GameObject _selectionBeforeAutofocus;
         private UnityHtmlScrollSettings _scrollSettings = UnityHtmlScrollSettings.Default;
+        private UnityHtmlEnvironmentWatcher _environmentWatcher;
+        private readonly Dictionary<string, GameObject> _returnFocusSelections = new();
+        private readonly UnityHtmlUiBridge _uiBridge;
+        private readonly UnityHtmlHapticsBridge _hapticsBridge = new UnityHtmlHapticsBridge();
+
+        public event Action BackRequested;
+
+        public UnityHtmlHost()
+        {
+            _uiBridge = new UnityHtmlUiBridge(() => BackRequested?.Invoke());
+        }
 
         public IUnityHtmlMotion Motion => _motion;
 
@@ -72,14 +83,26 @@ namespace UnityHTML.Runtime
             try
             {
                 RegisterMoyvaComponents();
+                if (Application.isPlaying)
+                {
+                    UnityHtmlInput.Ensure();
+                    UnityHtmlInput.BackRequested += OnGlobalBackRequested;
+                }
                 _root = root;
                 var guard = _root.gameObject.GetComponent<UnityHtmlReplacedElementGuard>();
                 if (guard == null)
                     guard = _root.gameObject.AddComponent<UnityHtmlReplacedElementGuard>();
+                _environmentWatcher = _root.gameObject.GetComponent<UnityHtmlEnvironmentWatcher>();
+                if (_environmentWatcher == null)
+                    _environmentWatcher = _root.gameObject.AddComponent<UnityHtmlEnvironmentWatcher>();
+                _environmentWatcher.Bind(this);
 #if UNITY_EDITOR
                 // Edit-mode preview roots must not gain a serialized component.
                 if (!Application.isPlaying)
+                {
                     guard.hideFlags = HideFlags.DontSaveInEditor;
+                    _environmentWatcher.hideFlags = HideFlags.DontSaveInEditor;
+                }
 #endif
                 _mountedCss = document.Css ?? string.Empty;
                 ClearRootChildren(_root);
@@ -124,6 +147,7 @@ namespace UnityHTML.Runtime
 
         public void Unmount()
         {
+            UnityHtmlInput.BackRequested -= OnGlobalBackRequested;
             var context = _context;
             var root = _root;
             _context = null;
@@ -142,6 +166,16 @@ namespace UnityHTML.Runtime
                 _tooltips = null;
             }
             _motion.Detach();
+            _returnFocusSelections.Clear();
+            if (_environmentWatcher != null)
+            {
+                if (!EditorDomainUnloadInProgress())
+                {
+                    if (ShouldDestroyDeferred()) UnityEngine.Object.Destroy(_environmentWatcher);
+                    else UnityEngine.Object.DestroyImmediate(_environmentWatcher);
+                }
+                _environmentWatcher = null;
+            }
 
             try
             {
@@ -231,6 +265,8 @@ namespace UnityHTML.Runtime
 #endif
         }
 
+        private void OnGlobalBackRequested() => BackRequested?.Invoke();
+
         public void Dispose() => Unmount();
         public bool UpdateRegion(string elementId, string html)
             => UpdateRegions(new Dictionary<string, string> { [elementId] = html });
@@ -317,6 +353,10 @@ namespace UnityHTML.Runtime
 
             if (!_context.Globals.TryGetValue("motion", out object motion) || !ReferenceEquals(motion, _motion))
                 _context.Globals["motion"] = _motion;
+            if (!_context.Globals.TryGetValue("ui", out object ui) || !ReferenceEquals(ui, _uiBridge))
+                _context.Globals["ui"] = _uiBridge;
+            if (!_context.Globals.TryGetValue("haptics", out object haptics) || !ReferenceEquals(haptics, _hapticsBridge))
+                _context.Globals["haptics"] = _hapticsBridge;
         }
 
         private void CompleteLayoutPass()
@@ -351,6 +391,15 @@ namespace UnityHTML.Runtime
             RestoreRenderedScrollPositions(scrollPositions);
             InitializeNewScrollPositions();
             ApplyAutofocus();
+            ApplyReturnFocus();
+            UnityHtmlElementEffects.ApplyNavigation(_root);
+            // Safe-area padding writes into Yoga after sizes are computed —
+            // one extra pass applies them without another full layout cycle.
+            if (UnityHtmlElementEffects.Apply(_context, _root))
+            {
+                _context.CalculateLayoutRecursively();
+                FlushReactElementLayout(_root);
+            }
             _tooltips?.RefreshTargets();
 #if UNITY_EDITOR
             MarkEditorPreviewObjectsDontSave(_root);
@@ -459,6 +508,63 @@ namespace UnityHTML.Runtime
             }
         }
 
+        // Re-runs environment-conditional effects after rotation/resize —
+        // called by UnityHtmlEnvironmentWatcher; no document rebuild happens.
+        internal void RefreshEnvironment()
+        {
+            if (_root == null || _context == null)
+                return;
+            UnityHtmlElementEffects.ApplyNavigation(_root);
+            if (UnityHtmlElementEffects.Apply(_context, _root))
+            {
+                _context.CalculateLayoutRecursively();
+                FlushReactElementLayout(_root);
+                Canvas.ForceUpdateCanvases();
+            }
+        }
+
+        // data-return-focus marks a container (typically a modal/dialog) whose
+        // disappearance restores the selection held when it appeared — the
+        // opener keeps focus without markup doing the bookkeeping.
+        private void ApplyReturnFocus()
+        {
+            EventSystem eventSystem = EventSystem.current;
+            if (eventSystem == null)
+                eventSystem = UnityEngine.Object.FindFirstObjectByType<EventSystem>();
+            if (eventSystem == null)
+            {
+                _returnFocusSelections.Clear();
+                return;
+            }
+
+            var seen = new HashSet<string>();
+            var elements = _root.GetComponentsInChildren<ReactElement>(true);
+            for (var i = 0; i < elements.Length; i++)
+            {
+                UGUIComponent component = elements[i] != null ? elements[i].Component : null;
+                if (component?.Id == null
+                    || !component.Data.TryGetValue("return-focus", out object flag)
+                    || string.Equals(flag?.ToString(), "false", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                seen.Add(component.Id);
+                if (!_returnFocusSelections.ContainsKey(component.Id))
+                    _returnFocusSelections[component.Id] = eventSystem.currentSelectedGameObject;
+            }
+
+            var gone = new List<string>();
+            foreach (var pair in _returnFocusSelections)
+                if (!seen.Contains(pair.Key))
+                    gone.Add(pair.Key);
+            foreach (string id in gone)
+            {
+                GameObject restore = _returnFocusSelections[id];
+                _returnFocusSelections.Remove(id);
+                if (restore != null && restore.activeInHierarchy)
+                    eventSystem.SetSelectedGameObject(restore);
+            }
+        }
+
         // Focus the first element carrying data-autofocus when it is newly
         // mounted; when that element unmounts, selection returns to whatever
         // had it before. Focus is handed over only once per mount so a rerender
@@ -480,8 +586,7 @@ namespace UnityHTML.Runtime
             {
                 UGUIComponent component = elements[i] != null ? elements[i].Component : null;
                 if (component == null
-                    || !component.Data.TryGetValue("autofocus", out object flag)
-                    || !string.Equals(flag?.ToString(), "true", StringComparison.OrdinalIgnoreCase))
+                    || !IsFocusFlagSet(component, "autofocus") && !IsFocusFlagSet(component, "first-selected"))
                     continue;
 
                 target = elements[i].GetComponent<Selectable>();
@@ -512,6 +617,12 @@ namespace UnityHTML.Runtime
             _selectionBeforeAutofocus = eventSystem.currentSelectedGameObject;
             if (target.IsActive() && target.interactable)
                 target.Select();
+        }
+
+        private static bool IsFocusFlagSet(UGUIComponent component, string key)
+        {
+            return component.Data.TryGetValue(key, out object flag) &&
+                   !string.Equals(flag?.ToString(), "false", StringComparison.OrdinalIgnoreCase);
         }
 
         private readonly struct RenderedScrollPosition
@@ -555,6 +666,8 @@ namespace UnityHTML.Runtime
             }
 
             record["motion"] = _motion;
+            record["ui"] = _uiBridge;
+            record["haptics"] = _hapticsBridge;
             return record;
         }
 
@@ -677,6 +790,27 @@ namespace UnityHTML.Runtime
 
             if (!UGUIContext.ComponentCreators.ContainsKey("select"))
                 UGUIContext.ComponentCreators["select"] = (_, _, context) => new UnityHtmlSelectComponent(context);
+
+            // Upstream ships ScrollbarComponent as a pseudo-element ("_scrollbar")
+            // for input/scroll internals — register it as a usable tag.
+            if (!UGUIContext.ComponentCreators.ContainsKey("scrollbar"))
+                UGUIContext.ComponentCreators["scrollbar"] =
+                    (_, _, context) => new ScrollbarComponent(context, "scrollbar");
+
+            if (!UGUIContext.ComponentCreators.ContainsKey("mask"))
+                UGUIContext.ComponentCreators["mask"] = (_, _, context) => new UnityHtmlMaskComponent(context);
+
+            if (!UGUIContext.ComponentCreators.ContainsKey("rectmask"))
+                UGUIContext.ComponentCreators["rectmask"] = (_, _, context) => new UnityHtmlRectMaskComponent(context);
+
+            if (!UGUIContext.ComponentCreators.ContainsKey("progress"))
+                UGUIContext.ComponentCreators["progress"] = (_, _, context) => new UnityHtmlProgressComponent(context, false);
+
+            if (!UGUIContext.ComponentCreators.ContainsKey("radial"))
+                UGUIContext.ComponentCreators["radial"] = (_, _, context) => new UnityHtmlProgressComponent(context, true);
+
+            if (!UGUIContext.ComponentCreators.ContainsKey("switch"))
+                UGUIContext.ComponentCreators["switch"] = (_, _, context) => new UnityHtmlSwitchComponent(context);
 
             PatchScrollComponentCreator();
         }
@@ -1319,7 +1453,12 @@ namespace UnityHTML.Runtime
         private readonly Image _checkmarkImage;
         private readonly TMP_Text _captionText;
         private readonly TMP_Text _itemText;
+        private readonly RectTransform _templateRect;
+        private readonly RectTransform _itemRect;
         private int _requestedValue;
+        private float _itemHeight = 34f;
+        private List<TMP_Dropdown.OptionData> _allOptions;
+        private List<int> _indexMap;
 
         public UnityHtmlSelectComponent(UGUIContext context) : base(context, "select")
         {
@@ -1342,14 +1481,17 @@ namespace UnityHTML.Runtime
                 fadeDuration = 0.08f
             };
 
-            BuildHierarchy(context, out _captionText, out _itemText, out _itemBackgroundImage, out _checkmarkImage, out var template);
-            Dropdown.template = template;
+            BuildHierarchy(context, out _captionText, out _itemText, out _itemBackgroundImage,
+                out _checkmarkImage, out _templateRect, out _itemRect);
+            Dropdown.template = _templateRect;
             Dropdown.captionText = _captionText;
             Dropdown.itemText = _itemText;
             Dropdown.options.Add(new TMP_Dropdown.OptionData("Option"));
             Dropdown.SetValueWithoutNotify(0);
             Dropdown.RefreshShownValue();
-            Dropdown.onValueChanged.AddListener(value => _requestedValue = value);
+            Dropdown.onValueChanged.AddListener(value => _requestedValue = OriginalIndex(value));
+            // Lets the cloned search field reach back to this component.
+            GameObject.AddComponent<UnityHtmlSelectHandle>().Owner = this;
 
             var bubbling = AddComponent<ScrollEventBubbling>();
             bubbling.Bubble = false;
@@ -1375,7 +1517,8 @@ namespace UnityHTML.Runtime
             {
                 case "onChange":
                 case "onValueChanged":
-                    var listener = new UnityEngine.Events.UnityAction<int>(value => callback.CallWithPriority(EventPriority.Discrete, value, this));
+                    var listener = new UnityEngine.Events.UnityAction<int>(value =>
+                        callback.CallWithPriority(EventPriority.Discrete, OriginalIndex(value), this));
                     Dropdown.onValueChanged.AddListener(listener);
                     return () => Dropdown.onValueChanged.RemoveListener(listener);
                 default:
@@ -1390,12 +1533,27 @@ namespace UnityHTML.Runtime
                 case "options":
                     SetOptions(value?.ToString());
                     return;
+                case "option-icons":
+                    SetOptionIcons(value?.ToString());
+                    return;
                 case "value":
                     _requestedValue = ToInt(value, _requestedValue);
                     ApplyRequestedValue();
                     return;
                 case "disabled":
                     Disabled = Convert.ToBoolean(value);
+                    return;
+                case "max-height":
+                    var maxHeight = ToFloat(value, _templateRect.sizeDelta.y);
+                    _templateRect.sizeDelta = new Vector2(_templateRect.sizeDelta.x, maxHeight);
+                    return;
+                case "item-height":
+                    _itemHeight = ToFloat(value, _itemHeight);
+                    _itemRect.sizeDelta = new Vector2(_itemRect.sizeDelta.x, _itemHeight);
+                    return;
+                case "searchable":
+                    if (Convert.ToBoolean(value))
+                        EnsureSearchField();
                     return;
                 default:
                     base.SetProperty(propertyName, value);
@@ -1417,22 +1575,117 @@ namespace UnityHTML.Runtime
 
         private void SetOptions(string value)
         {
-            Dropdown.ClearOptions();
+            _indexMap = null;
             var labels = string.IsNullOrWhiteSpace(value)
                 ? new[] { "Option" }
                 : value.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
-            var options = new List<TMP_Dropdown.OptionData>(labels.Length);
+            _allOptions = new List<TMP_Dropdown.OptionData>(labels.Length);
             for (var i = 0; i < labels.Length; i++)
-                options.Add(new TMP_Dropdown.OptionData(labels[i].Trim()));
-            Dropdown.AddOptions(options);
+                _allOptions.Add(new TMP_Dropdown.OptionData(labels[i].Trim()));
+            Dropdown.ClearOptions();
+            Dropdown.AddOptions(_allOptions);
+            ApplyRequestedValue();
+        }
+
+        // option-icons="res1,res2" — sprite per option index, resolved through
+        // the context media provider.
+        private void SetOptionIcons(string value)
+        {
+            if (_allOptions == null || string.IsNullOrWhiteSpace(value))
+                return;
+            var icons = value.Split('|', ',');
+            for (var i = 0; i < icons.Length && i < _allOptions.Count; i++)
+            {
+                string icon = icons[i].Trim();
+                if (string.IsNullOrEmpty(icon))
+                    continue;
+                var option = _allOptions[i];
+                if (ReactUnity.Styling.Converters.AllConverters.SpriteSourceConverter
+                        .TryGetConstantValue<ReactUnity.Types.SpriteReference>(icon, out var spriteRef))
+                    spriteRef.Get(Context, sprite =>
+                    {
+                        option.image = sprite;
+                        Dropdown.RefreshShownValue();
+                    });
+            }
+        }
+
+        // searchable — add a filter input above the dropdown viewport. The
+        // template is cloned per open, so the field is built once here; the
+        // cloned copy resolves its owner through the serialized Dropdown ref.
+        private void EnsureSearchField()
+        {
+            if (_templateRect.Find("Search") != null)
+                return;
+            var search = CreateChild("Search", _templateRect,
+                typeof(Image), typeof(TMP_InputField), typeof(UnityHtmlSelectSearch));
+            var searchRect = search.GetComponent<RectTransform>();
+            searchRect.anchorMin = Vector2.up;
+            searchRect.anchorMax = Vector2.one;
+            searchRect.pivot = new Vector2(0.5f, 1f);
+            searchRect.sizeDelta = new Vector2(0f, 30f);
+            searchRect.anchoredPosition = Vector2.zero;
+            search.GetComponent<Image>().color = new Color(0.05f, 0.055f, 0.085f, 1f);
+            var input = search.GetComponent<TMP_InputField>();
+            var inputText = CreateChild("Text", searchRect, typeof(TMPro.TextMeshProUGUI))
+                .GetComponent<TMPro.TextMeshProUGUI>();
+            ConfigureText(inputText, Context, 13f, TextAlignmentOptions.MidlineLeft);
+            Stretch(inputText.GetComponent<RectTransform>(), 10f, 10f, 2f, 2f);
+            input.textComponent = inputText;
+            input.pointSize = 13f;
+            var hook = search.GetComponent<UnityHtmlSelectSearch>();
+            hook.Dropdown = Dropdown;
+
+            // Viewport slides below the search row.
+            var viewport = _templateRect.Find("Viewport") as RectTransform;
+            if (viewport != null)
+            {
+                viewport.offsetMax = new Vector2(viewport.offsetMax.x, -34f);
+            }
+        }
+
+        internal int OriginalIndex(int filtered)
+            => _indexMap != null && filtered >= 0 && filtered < _indexMap.Count
+                ? _indexMap[filtered]
+                : filtered;
+
+        internal void ApplyFilter(string query)
+        {
+            if (_allOptions == null)
+                return;
+            _indexMap = new List<int>();
+            var filtered = new List<TMP_Dropdown.OptionData>();
+            for (var i = 0; i < _allOptions.Count; i++)
+            {
+                if (string.IsNullOrEmpty(query) ||
+                    _allOptions[i].text.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    filtered.Add(_allOptions[i]);
+                    _indexMap.Add(i);
+                }
+            }
+            Dropdown.ClearOptions();
+            Dropdown.AddOptions(filtered);
+            Dropdown.SetValueWithoutNotify(_indexMap.IndexOf(_requestedValue));
+        }
+
+        internal void RestoreOptions()
+        {
+            if (_indexMap == null)
+                return;
+            _indexMap = null;
+            Dropdown.ClearOptions();
+            Dropdown.AddOptions(_allOptions);
             ApplyRequestedValue();
         }
 
         private void ApplyRequestedValue()
         {
+            // _requestedValue is always an ORIGINAL index; the dropdown shows
+            // the filtered position while a search filter is active.
+            int shown = _indexMap != null ? _indexMap.IndexOf(_requestedValue) : _requestedValue;
             var maximum = Mathf.Max(0, Dropdown.options.Count - 1);
-            _requestedValue = Mathf.Clamp(_requestedValue, 0, maximum);
-            Dropdown.SetValueWithoutNotify(_requestedValue);
+            Dropdown.SetValueWithoutNotify(Mathf.Clamp(shown < 0 ? 0 : shown, 0, maximum));
             Dropdown.RefreshShownValue();
         }
 
@@ -1442,7 +1695,8 @@ namespace UnityHTML.Runtime
             out TMP_Text itemText,
             out Image itemBackgroundImage,
             out Image checkmarkImage,
-            out RectTransform templateRect)
+            out RectTransform templateRect,
+            out RectTransform itemRectOut)
         {
             var label = CreateChild("Label", RectTransform, typeof(TextMeshProUGUI));
             captionText = label.GetComponent<TextMeshProUGUI>();
@@ -1489,10 +1743,22 @@ namespace UnityHTML.Runtime
 
             var item = CreateChild("Item", contentRect, typeof(Toggle));
             var itemRect = item.GetComponent<RectTransform>();
+            itemRectOut = itemRect;
             itemRect.anchorMin = new Vector2(0f, 0.5f);
             itemRect.anchorMax = new Vector2(1f, 0.5f);
             itemRect.pivot = new Vector2(0.5f, 0.5f);
-            itemRect.sizeDelta = new Vector2(0f, 34f);
+            itemRect.sizeDelta = new Vector2(0f, _itemHeight);
+
+            var itemIcon = CreateChild("Item Icon", itemRect, typeof(Image));
+            var itemIconImage = itemIcon.GetComponent<Image>();
+            itemIconImage.raycastTarget = false;
+            itemIconImage.preserveAspect = true;
+            var iconRect = itemIcon.GetComponent<RectTransform>();
+            iconRect.anchorMin = new Vector2(0f, 0.5f);
+            iconRect.anchorMax = new Vector2(0f, 0.5f);
+            iconRect.pivot = new Vector2(0.5f, 0.5f);
+            iconRect.sizeDelta = new Vector2(20f, 20f);
+            iconRect.anchoredPosition = new Vector2(18f, 0f);
 
             var itemBackground = CreateChild("Item Background", itemRect, typeof(Image));
             itemBackgroundImage = itemBackground.GetComponent<Image>();
@@ -1522,6 +1788,10 @@ namespace UnityHTML.Runtime
             itemToggle.transition = Selectable.Transition.ColorTint;
             itemToggle.isOn = true;
 
+            // Dropdown.itemImage points at the template item's image slot —
+            // TMP_Dropdown swaps in each option's sprite on build.
+            Dropdown.itemImage = itemIconImage;
+
             var scrollRect = template.GetComponent<ScrollRect>();
             scrollRect.content = contentRect;
             scrollRect.viewport = viewportRect;
@@ -1550,6 +1820,15 @@ namespace UnityHTML.Runtime
             text.textWrappingMode = TextWrappingModes.NoWrap;
             text.overflowMode = TextOverflowModes.Ellipsis;
             text.raycastTarget = false;
+        }
+
+        private static float ToFloat(object value, float fallback)
+        {
+            if (value == null)
+                return fallback;
+            if (float.TryParse(value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+                return parsed;
+            return fallback;
         }
 
         private static int ToInt(object value, int fallback)
