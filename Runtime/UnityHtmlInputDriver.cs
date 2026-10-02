@@ -25,7 +25,7 @@ namespace UnityHTML.Runtime
                 return;
             }
             var go = new GameObject("UnityHTML Input Driver") { hideFlags = HideFlags.HideInHierarchy };
-            DontDestroyOnLoad(go);
+            if (Application.isPlaying) DontDestroyOnLoad(go);
             _instance = go.AddComponent<UnityHtmlInputDriver>();
         }
 

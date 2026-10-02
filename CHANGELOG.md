@@ -1,3 +1,7 @@
+# 0.1.1
+
+- Rounded native switch with checked/value aliases, label activation, silent reconciliation, resize-safe knob motion and reduced-motion support.
+
 # Changelog
 
 All notable changes to UnityHTML are documented here. Format follows

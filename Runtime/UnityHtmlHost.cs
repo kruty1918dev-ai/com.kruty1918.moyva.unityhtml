@@ -126,12 +126,14 @@ namespace UnityHTML.Runtime
                 if (!string.IsNullOrWhiteSpace(document.Css))
                     _context.InsertStyle(document.Css);
 
+                _context.InsertStyle("switch { width: 124px; height: 68px; flex-shrink: 0; cursor: pointer; pointer-events: all; }");
                 _context.Start();
                 _tree = new UnityHtmlDocumentTree(_context);
                 _tree.ComponentRemoved = _motion.HandleComponentRemoved;
                 _tree.Update(document.Html);
                 DetachUnsafeEditorAssemblyReloadDispose(_context);
                 CompleteLayoutPass();
+                BindSwitchMotion();
                 _motion.ApplyDeclaredMotions();
                 return UnityHtmlMountResult.Success();
             }
@@ -283,7 +285,8 @@ namespace UnityHTML.Runtime
                 if (changed || _layoutSize != _root.rect.size)
                 {
                     CompleteLayoutPass();
-                    _motion.ApplyDeclaredMotions();
+                    BindSwitchMotion();
+                _motion.ApplyDeclaredMotions();
                 }
                 return true;
             }
@@ -319,7 +322,8 @@ namespace UnityHTML.Runtime
                 if (_tree.Update(document.Html) || _layoutSize != _root.rect.size)
                 {
                     CompleteLayoutPass();
-                    _motion.ApplyDeclaredMotions();
+                    BindSwitchMotion();
+                _motion.ApplyDeclaredMotions();
                 }
                 return UnityHtmlMountResult.Success();
             }
@@ -576,8 +580,12 @@ namespace UnityHTML.Runtime
             EventSystem eventSystem = EventSystem.current;
             if (eventSystem == null)
                 eventSystem = UnityEngine.Object.FindFirstObjectByType<EventSystem>();
-            if (eventSystem == null)
-                return;
+            if (eventSystem == null && Application.isPlaying)
+            {
+                UnityHtmlInput.EnsureEventSystem();
+                eventSystem = EventSystem.current;
+            }
+            if (eventSystem == null) return;
 
             Selectable target = null;
             string targetId = null;
@@ -594,7 +602,7 @@ namespace UnityHTML.Runtime
                     target = elements[i].GetComponentInChildren<Selectable>(true);
                 if (target == null)
                     continue;
-                targetId = component.Id;
+                targetId = component.Id ?? "@" + target.GetHashCode();
                 break;
             }
 
@@ -780,6 +788,13 @@ namespace UnityHTML.Runtime
                 transform.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, layout.LayoutHeight);
                 layout.MarkLayoutSeen();
             }
+        }
+
+        private void BindSwitchMotion()
+        {
+            if (_root == null) return;
+            foreach (var visual in _root.GetComponentsInChildren<UnityHtmlSwitchVisual>(true))
+                visual.ReducedMotion = () => _motion.ReducedMotion;
         }
 
         private static void RegisterMoyvaComponents()

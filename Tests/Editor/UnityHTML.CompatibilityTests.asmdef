@@ -6,7 +6,8 @@
     "ReactUnity.UGUI",
     "UnityHTML.Runtime",
     "UnityEngine.UI",
-    "Unity.TextMeshPro"
+    "Unity.TextMeshPro",
+    "LibYoga"
   ],
   "includePlatforms": [
     "Editor"

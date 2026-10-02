@@ -186,20 +186,30 @@ namespace UnityHTML.Tests
         [Test]
         public void DataFirstSelected_SelectsOnMount()
         {
+            // EventSystem is not ExecuteAlways: register its lifecycle for this
+            // EditMode fixture instead of relying on a previous test's scene.
+            var eventObject = new GameObject("focus-test",typeof(EventSystem));
+            var system=eventObject.GetComponent<EventSystem>();
+            typeof(EventSystem).GetMethod("OnEnable",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(system,null);
             var rootObject = CreateRoot();
             using var host = new UnityHtmlHost();
             try
             {
                 var result = host.Mount(rootObject.GetComponent<RectTransform>(),
                     new UnityHtmlDocument(
-                        "<view><button><text>A</text></button><button data-first-selected><text>B</text></button></view>",
+                        "<view><button><text>A</text></button><button data-first-selected='true'><text>B</text></button></view>",
                         null, "firstselected"));
                 Assert.That(result.Succeeded, Is.True, result.ErrorMessage);
                 var selected = EventSystem.current.currentSelectedGameObject;
                 Assert.That(selected, Is.Not.Null);
                 Assert.That(selected.GetComponentInChildren<TMPro.TMP_Text>()?.text, Is.EqualTo("B"));
             }
-            finally { Object.DestroyImmediate(rootObject); }
+            finally
+            {
+                Object.DestroyImmediate(rootObject);
+                typeof(EventSystem).GetMethod("OnDisable",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(system,null);
+                Object.DestroyImmediate(eventObject);
+            }
         }
 
         [Test]

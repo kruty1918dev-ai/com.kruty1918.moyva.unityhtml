@@ -270,7 +270,7 @@ namespace UnityHTML.Runtime
 
         private void SetAttribute(IReactComponent component, string name, string value)
         {
-            if (name.StartsWith("on", StringComparison.Ordinal))
+            if ((name.StartsWith("on", StringComparison.Ordinal) && name != "on-color"))
                 component.SetEventListener(name, value == null ? null : Callback.From(value, _context, component));
             else if (name.StartsWith("data-", StringComparison.Ordinal)) component.SetData(name.Substring(5), value);
             else component.SetProperty(name, value);

@@ -77,7 +77,8 @@ namespace UnityHTML.Tests
                         null, "scrollbar"));
                 Assert.That(result.Succeeded, Is.True, result.ErrorMessage);
 
-                var scrollbar = rootObject.GetComponentInChildren<Scrollbar>(true);
+                var scrollbar = rootObject.GetComponentsInChildren<Scrollbar>(true)
+                    .FirstOrDefault(s => s.GetComponentInParent<ReactUnity.UGUI.Behaviours.ReactElement>()?.Component?.Tag == "scrollbar");
                 Assert.That(scrollbar, Is.Not.Null, "scrollbar tag must create a Scrollbar");
                 var scrollRect = rootObject.GetComponentsInChildren<ScrollRect>(true)
                     .FirstOrDefault(s => s.verticalScrollbar == scrollbar);
@@ -151,7 +152,7 @@ namespace UnityHTML.Tests
             try
             {
                 var result = host.Mount(rootObject.GetComponent<RectTransform>(),
-                    new UnityHtmlDocument("<select options='Alpha|Beta|Gamma' searchable/>", null, "searchable"));
+                    new UnityHtmlDocument("<select options='Alpha|Beta|Gamma' searchable='true'/>", null, "searchable"));
                 Assert.That(result.Succeeded, Is.True, result.ErrorMessage);
                 var input = rootObject.GetComponentsInChildren<TMPro.TMP_InputField>(true)
                     .FirstOrDefault(i => i.name == "Search");
@@ -168,7 +169,7 @@ namespace UnityHTML.Tests
             try
             {
                 var result = host.Mount(rootObject.GetComponent<RectTransform>(),
-                    new UnityHtmlDocument("<select options='Alpha|Beta|Gamma' searchable/>", null, "filter"));
+                    new UnityHtmlDocument("<select options='Alpha|Beta|Gamma' searchable='true'/>", null, "filter"));
                 Assert.That(result.Succeeded, Is.True, result.ErrorMessage);
 
                 var element = rootObject.GetComponentsInChildren<ReactUnity.UGUI.Behaviours.ReactElement>(true)

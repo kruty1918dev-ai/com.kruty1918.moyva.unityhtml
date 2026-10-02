@@ -1,6 +1,6 @@
 {
   "name": "com.kruty1918.moyva.unityhtml",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "displayName": "Moyva UnityHTML",
   "description": "HTML-driven native Unity presentation framework and migration tooling.",
   "unity": "6000.3",

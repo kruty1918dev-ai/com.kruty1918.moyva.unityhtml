@@ -162,13 +162,15 @@ namespace UnityHTML.Tests
                 $"{alive}/{cycles} mounted UGUIContext graphs stayed rooted after unmount");
         }
 
-        [Test]
-        public void UnmountedContexts_AreCollected()
+        [UnityEngine.TestTools.UnityTest]
+        public System.Collections.IEnumerator UnmountedContexts_AreCollected()
         {
             var references = new System.Collections.Generic.List<WeakReference>();
             for (int i = 0; i < 6; i++)
                 MountAndTrack(references);
 
+            yield return null;
+            yield return Resources.UnloadUnusedAssets();
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();

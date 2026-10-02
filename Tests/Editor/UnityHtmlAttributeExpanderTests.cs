@@ -73,7 +73,7 @@ namespace UnityHTML.Tests
         public void Panel_BecomesViewWithMotionRole()
         {
             XmlElement root = Expand("<panel role='dialog' bg='screen'><text>x</text></panel>");
-            var view = (XmlElement)root.FirstChild;
+            var view = (XmlElement)root.LastChild;
             Assert.That(view.Name, Is.EqualTo("view"));
             Assert.That(view.GetAttribute("data-motion-role"), Is.EqualTo("dialog"));
             Assert.That(view.HasAttribute("role"), Is.False);
@@ -115,7 +115,7 @@ namespace UnityHTML.Tests
         [Test]
         public void DataStretch_And_DataCenter_FillAndCenter()
         {
-            XmlElement root = Expand("<view><view data-stretch/><view data-center/></view>");
+            XmlElement root = Expand("<view><view data-stretch='true'/><view data-center='true'/></view>");
             var stretch = (XmlElement)root.FirstChild.ChildNodes[0];
             var center = (XmlElement)root.FirstChild.ChildNodes[1];
             Assert.That(stretch.GetAttribute("style"), Does.Contain("left:0").And.Contain("bottom:0"));
