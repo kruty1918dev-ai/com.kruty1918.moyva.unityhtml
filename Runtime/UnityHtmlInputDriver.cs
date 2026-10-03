@@ -31,9 +31,15 @@ namespace UnityHTML.Runtime
 
         private void Update()
         {
+            if (UnityHtmlInput.PollBackend()) return;
             DetectDevice();
             DetectBack();
         }
+
+        private void OnApplicationFocus(bool focused)
+        { if (focused) UnityHtmlInput.EnsureEventSystem(); }
+        private void OnApplicationPause(bool paused)
+        { if (!paused) UnityHtmlInput.EnsureEventSystem(); }
 
         private void DetectDevice()
         {

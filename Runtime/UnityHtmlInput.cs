@@ -20,8 +20,7 @@ namespace UnityHTML.Runtime
     /// <para><see cref="Ensure"/> is invoked by <see cref="UnityHtmlHost.Mount"/>:
     /// it guarantees an <see cref="EventSystem"/> exists and picks the best
     /// input module — the Unity Input System UI module when the Input System
-    /// package is installed (resolved by reflection so it stays an optional
-    /// dependency), otherwise the legacy <see cref="StandaloneInputModule"/>.</para>
+    /// package is installed (through an optional typed assembly), otherwise the legacy <see cref="StandaloneInputModule"/>.</para>
     ///
     /// <para>While a document is mounted, a hidden driver polls device usage
     /// once per frame: <see cref="ActiveDevice"/> tracks the most recently
@@ -34,6 +33,14 @@ namespace UnityHTML.Runtime
     /// </summary>
     public static class UnityHtmlInput
     {
+        static Action<EventSystem> _ensureBackend;
+        static Action _pollBackend;
+        /// <summary>Install a typed optional input backend. The Input System integration registers before scene load.</summary>
+        public static void RegisterInputBackend(Action<EventSystem> ensure, Action poll)
+        { _ensureBackend = ensure; _pollBackend = poll; }
+        internal static bool PollBackend()
+        { if (_pollBackend == null) return false; _pollBackend(); return true; }
+
         /// <summary>Most recently used device family. Starts at KeyboardMouse.</summary>
         public static UnityHtmlInputDevice ActiveDevice { get; internal set; } = UnityHtmlInputDevice.KeyboardMouse;
 
@@ -66,8 +73,10 @@ namespace UnityHTML.Runtime
                 eventSystem = go.AddComponent<EventSystem>();
             }
 
-            if (eventSystem.GetComponent<BaseInputModule>() != null)
-                return;
+            eventSystem.enabled = true;
+            if (_ensureBackend != null) { _ensureBackend(eventSystem); return; }
+            var existing = eventSystem.GetComponent<BaseInputModule>();
+            if (existing != null) { existing.enabled = true; return; }
 
             var moduleType = ResolvePreferredModuleType();
             if (moduleType != null)
@@ -90,7 +99,7 @@ namespace UnityHTML.Runtime
             return null;
         }
 
-        internal static void NotifyDevice(UnityHtmlInputDevice device)
+        public static void NotifyDevice(UnityHtmlInputDevice device)
         {
             if (device == ActiveDevice)
                 return;
@@ -99,7 +108,7 @@ namespace UnityHTML.Runtime
             catch (Exception ex) { Debug.LogException(ex); }
         }
 
-        internal static void NotifyBackRequested()
+        public static void NotifyBackRequested()
         {
             try { BackRequested?.Invoke(); }
             catch (Exception ex) { Debug.LogException(ex); }

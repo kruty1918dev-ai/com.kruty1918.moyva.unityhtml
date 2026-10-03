@@ -1,3 +1,10 @@
+# 0.1.3
+
+- Optional typed Unity Input System backend: touch, mouse, gamepad and back detection work in Input System-only players and survive IL2CPP stripping.
+- Mount and application resume repair disabled stock UI modules, missing point/press references and disabled UI actions. Valid custom maps and shared action assets remain intact.
+- The legacy input module is disabled when the new backend takes ownership; custom XR/multiplayer input modules are respected.
+- Touch states now exercise the full EventSystem route in regression tests, rather than only invoking button callbacks.
+
 # 0.1.2
 
 - Automatically refresh container media, CSS viewport variables and full layout after window, container, Canvas-scale or safe-area changes; preserve inputs, controls and scroll state.

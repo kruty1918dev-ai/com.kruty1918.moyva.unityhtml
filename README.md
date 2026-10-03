@@ -30,7 +30,7 @@ Three steps, all required:
 3. **UnityHTML itself:**
 
    ```json
-   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.1.2"
+   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.1.3"
    ```
 
    or Package Manager → **+** → **Add package from git URL** with the same
@@ -335,6 +335,14 @@ Roles: `panel`, `dialog`, `scrim`, `toast`, `edge-top`, `edge-bottom`, `none`. E
 
 `IUnityHtmlMotion.ReducedMotion` is the global gate: declared motions snap to their final state — entries start at resting pose and exits fire `ExitFinished` immediately — so close flows keep their callbacks. Setting it mid-motion cancels in-flight tweens. Presenters push the persisted reduce-motion setting here on mount and on settings change.
 
+## Touch and input
+
+With Unity Input System installed and enabled, an optional `UnityHTML.InputSystem` assembly registers a typed backend before scene load. Mounting a document ensures a stock `InputSystemUIInputModule` has enabled point and press actions; incomplete references are recovered from `UI/Point` and `UI/Click`, or from Unity's standard multi-touch actions. Focus/pause resume repeats the same idempotent check. No reflection is needed for the Input System module in IL2CPP players.
+
+Valid custom action maps are retained. Shared action asset definitions are never rewritten. Custom XR/multiplayer input modules are respected. Without the Input System package, legacy input continues to work when its backend is enabled. Device-family detection and Escape/gamepad-back use the installed backend; UI events still pass through the normal Unity EventSystem, so there is one click per gesture.
+
+The optional assembly uses package version defines and `ENABLE_INPUT_SYSTEM`; installing UnityHTML does not install or force the Input System package. Run `UnityHtmlTouchInputTests` together with application tests that enqueue began/ended touch states and cross scene boundaries.
+
 ## Tooltips
 
 `data-tooltip="..."` on any element gives it a tooltip through the shared layer: 0.3 s show delay, 0.12 s unscaled fade-in, screen-bounds clamping, and a hot window so retargeting an adjacent control skips the delay. The tooltip is reachable without a mouse — keyboard focus shows it, and a touch long-press shows it while a plain tap never flashes it. Element tooltips take precedence over world tooltips while hovered.
@@ -356,5 +364,5 @@ ReactUnity Core and QuickJS stay as commit-pinned UPM git dependencies. Unity mu
 `main` is wired to CI that auto-tags releases: bump `"version"` in
 `package.json`, push to `main`, and the `UPM release` workflow tags
 `v<version>` automatically. Consumers pinned to a tag
-(`...git#v0.1.2`) upgrade by changing the tag in `manifest.json`;
+(`...git#v0.1.3`) upgrade by changing the tag in `manifest.json`;
 consumers on `...git` (HEAD) get the latest `main` on next resolve.

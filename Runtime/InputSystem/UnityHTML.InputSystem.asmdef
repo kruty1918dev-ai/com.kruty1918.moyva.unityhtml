@@ -1,0 +1,21 @@
+{
+  "name": "UnityHTML.InputSystem",
+  "rootNamespace": "UnityHTML.InputSystem",
+  "references": [
+    "UnityHTML.Runtime",
+    "Unity.InputSystem",
+    "UnityEngine.UI"
+  ],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "UNITYHTML_INPUT_SYSTEM",
+    "ENABLE_INPUT_SYSTEM"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.inputsystem",
+      "expression": "1.0.0",
+      "define": "UNITYHTML_INPUT_SYSTEM"
+    }
+  ]
+}
