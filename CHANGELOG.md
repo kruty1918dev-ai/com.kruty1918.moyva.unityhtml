@@ -25,6 +25,10 @@
 All notable changes to UnityHTML are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.4
+
+- Mark the optional Input System assembly `AlwaysLinkAssembly` so UnityLinker processes its runtime initializer even when no scene types reference the assembly. This closes an Android IL2CPP stripping gap detected after the 0.1.3 Editor checks.
+
 ## [Unreleased]
 
 ### Added

@@ -6,6 +6,9 @@ using UnityEngine.InputSystem.UI;
 using UnityEngine.Scripting;
 using UnityHTML.Runtime;
 
+// This package assembly may have no scene-type references; keep its runtime registration discoverable.
+[assembly: AlwaysLinkAssembly]
+
 namespace UnityHTML.InputSystem
 {
     /// <summary>Typed optional integration: survives IL2CPP, repairs incomplete UI bindings, never edits a shared action asset.</summary>
