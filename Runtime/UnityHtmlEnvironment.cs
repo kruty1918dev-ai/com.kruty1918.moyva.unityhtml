@@ -53,6 +53,10 @@ namespace UnityHTML.Runtime
 
         private static OrientationClass DefaultOrientation()
         {
+            // Window geometry is authoritative in split-screen/folded windows;
+            // Screen.orientation may still describe the physical device.
+            if(Screen.width > 0 && Screen.height > 0)
+                return Screen.width > Screen.height ? OrientationClass.Landscape : OrientationClass.Portrait;
             switch (Screen.orientation)
             {
                 case ScreenOrientation.Portrait:

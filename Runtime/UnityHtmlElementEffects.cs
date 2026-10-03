@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using ReactUnity.UGUI;
 using ReactUnity.UGUI.Behaviours;
+using ReactUnity.Styling;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.UI;
 using Yoga;
@@ -27,6 +29,7 @@ namespace UnityHTML.Runtime
 
             bool layoutDirty = false;
             var orientation = UnityHtmlEnvironment.Orientation;
+            var insets = UnityHtmlViewport.Capture(root,new Vector3[4]).SafeInsets;
             var elements = root.GetComponentsInChildren<ReactElement>(true);
             for (var i = 0; i < elements.Length; i++)
             {
@@ -40,7 +43,7 @@ namespace UnityHTML.Runtime
                 ApplyTextEffects(elements[i], component);
                 ApplyImageModes(elements[i], component);
                 ApplyHaptic(elements[i], component);
-                layoutDirty |= ApplySafeArea(component);
+                layoutDirty |= ApplySafeArea(component,insets,root.rect.width);
             }
 
             LinkScrollbars(root);
@@ -266,36 +269,58 @@ namespace UnityHTML.Runtime
         // Written directly (not through style) so orientation changes reapply
         // without reparsing markup; the host runs a second layout pass when
         // this returns true.
-        private static bool ApplySafeArea(UGUIComponent component)
-        {
-            if (!Has(component, "safe-area", out string spec))
-                return false;
+        private sealed class SafeAreaState { }
+        private static readonly ConditionalWeakTable<UGUIComponent, SafeAreaState> SafeAreaElements = new();
 
-            Vector4 all = UnityHtmlEnvironment.SafeAreaInsets();
-            bool useAll = false, left = false, right = false, top = false, bottom = false;
-            foreach (string token in spec.Split('|', ',', ' '))
-            {
+        private static Vector4 SafeEdges(string spec)
+        {
+            var edges = Vector4.zero;
+            foreach (var token in spec.Split('|', ',', ' '))
                 switch (token.Trim().ToLowerInvariant())
                 {
-                    case "all": useAll = true; break;
-                    case "left": left = true; break;
-                    case "right": right = true; break;
-                    case "top": top = true; break;
-                    case "bottom": bottom = true; break;
+                    case "all": return Vector4.one;
+                    case "left": edges.x = 1; break;
+                    case "bottom": edges.y = 1; break;
+                    case "right": edges.z = 1; break;
+                    case "top": edges.w = 1; break;
                 }
-            }
+            return edges;
+        }
+
+        private static bool ApplySafeArea(UGUIComponent component,Vector4 all,float containingWidth)
+        {
+            var marked = Has(component, "safe-area", out string spec);
+            if (!marked && !SafeAreaElements.TryGetValue(component, out _)) return false;
+            if (marked) SafeAreaElements.GetValue(component, _ => new SafeAreaState());
+            else SafeAreaElements.Remove(component);
+            var edges = marked ? SafeEdges(spec) : Vector4.zero;
+            // Marked ancestors already reserve their requested edges. Native
+            // safe-area parents are handled by the root-relative snapshot.
+            for (var parent = component.Parent as UGUIComponent; parent != null; parent = parent.Parent as UGUIComponent)
+                if (Has(parent, "safe-area", out var parentSpec))
+                {
+                    var reserved = SafeEdges(parentSpec);
+                    edges = Vector4.Scale(edges, Vector4.one - reserved);
+                }
+            all = Vector4.Scale(all, edges);
+            if (component.Parent is UGUIComponent container && container.Layout != null)
+                containingWidth = container.Layout.LayoutWidth;
 
             var layout = component.Layout;
             if (layout == null)
                 return false;
 
             bool dirty = false;
-            dirty |= SetPadding(layout, YogaEdge.Left, (useAll || left) ? all.x : 0f);
-            dirty |= SetPadding(layout, YogaEdge.Bottom, (useAll || bottom) ? all.y : 0f);
-            dirty |= SetPadding(layout, YogaEdge.Right, (useAll || right) ? all.z : 0f);
-            dirty |= SetPadding(layout, YogaEdge.Top, (useAll || top) ? all.w : 0f);
+            var style=component.ComputedStyle;
+            dirty |= SetPadding(layout, YogaEdge.Left, Padding(style.GetStyleValue(LayoutProperties.PaddingLeft),containingWidth)+all.x);
+            dirty |= SetPadding(layout, YogaEdge.Bottom, Padding(style.GetStyleValue(LayoutProperties.PaddingBottom),containingWidth)+all.y);
+            dirty |= SetPadding(layout, YogaEdge.Right, Padding(style.GetStyleValue(LayoutProperties.PaddingRight),containingWidth)+all.z);
+            dirty |= SetPadding(layout, YogaEdge.Top, Padding(style.GetStyleValue(LayoutProperties.PaddingTop),containingWidth)+all.w);
             return dirty;
         }
+
+        private static float Padding(YogaValue value,float width)
+            => value.Unit == YogaUnit.Percent ? width*value.Value*.01f : value.Unit == YogaUnit.Point ? value.Value : 0;
 
         private static bool SetPadding(YogaNode layout, YogaEdge edge, float value)
         {

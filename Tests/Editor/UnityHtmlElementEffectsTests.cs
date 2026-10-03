@@ -117,9 +117,10 @@ namespace UnityHTML.Tests
         [Test]
         public void DataSafeArea_SetsYogaPadding()
         {
-            UnityHtmlEnvironment.SafeAreaProvider = () => new Rect(0, 0, 100, 956);
-            UnityHtmlEnvironment.ScreenSizeProvider = () => new Vector2(100, 1000);
+            UnityHtmlEnvironment.SafeAreaProvider = () => new Rect(0, 0, 800, 556);
+            UnityHtmlEnvironment.ScreenSizeProvider = () => new Vector2(800, 600);
             var rootObject = CreateRoot();
+            Object.DestroyImmediate(rootObject.GetComponent<Canvas>()); // fixed logical test container
             using var host = new UnityHtmlHost();
             try
             {

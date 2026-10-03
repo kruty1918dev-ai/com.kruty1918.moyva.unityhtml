@@ -1,3 +1,14 @@
+# 0.1.2
+
+- Automatically refresh container media, CSS viewport variables and full layout after window, container, Canvas-scale or safe-area changes; preserve inputs, controls and scroll state.
+- Shared reversible orientation of screen-space ScaleWithScreenSize Canvas references, with an explicit opt-out.
+- Safe-area padding in layout units, additive authored padding, native-safe parent and nested-edge deduplication; scroll resizing follows the final safe-area pass.
+- Container-based `layout: wide` media feature, `data-layout="adaptive"`, viewport snapshot and post-layout change event.
+- Reusable resize observer survives same-frame unmount/remount; zero-sized startup windows wait for valid geometry.
+- Native C# callback resolver supports static documents without starting a JavaScript VM, including IL2CPP targets.
+- Authored switch dimensions now override package defaults.
+- Editor and PlayMode regression coverage for resize, state retention, safe area, Canvas ownership and native events.
+
 # 0.1.1
 
 - Rounded native switch with checked/value aliases, label activation, silent reconciliation, resize-safe knob motion and reduced-motion support.

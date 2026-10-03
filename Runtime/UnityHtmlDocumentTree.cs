@@ -14,7 +14,9 @@ namespace UnityHTML.Runtime
         private readonly ReactContext _context;
         private readonly List<Node> _roots = new();
         private string _html;
-        public UnityHtmlDocumentTree(ReactContext context) => _context = context;
+        private readonly Func<string, Delegate> _nativeEvents;
+        public UnityHtmlDocumentTree(ReactContext context, Func<string, Delegate> nativeEvents = null)
+        { _context = context; _nativeEvents = nativeEvents; }
 
         /// <summary>
         /// Fired right before a reconciled-out component is destroyed/pooled, so the
@@ -128,6 +130,8 @@ namespace UnityHTML.Runtime
                 if (child.NodeType != XmlNodeType.Element && child.NodeType != XmlNodeType.Text) continue;
                 string key = child.Attributes?["id"]?.Value ?? child.Attributes?["data-key"]?.Value;
                 string tag = child.NodeType == XmlNodeType.Text ? "_text" : child.Name;
+                if (_nativeEvents != null && tag == "script")
+                    throw new InvalidOperationException("Script tags are unavailable in native event mode.");
                 int match = index;
                 while (match < nodes.Count && !nodes[match].Matches(tag, key)) match++;
                 Node node;
@@ -271,7 +275,8 @@ namespace UnityHTML.Runtime
         private void SetAttribute(IReactComponent component, string name, string value)
         {
             if ((name.StartsWith("on", StringComparison.Ordinal) && name != "on-color"))
-                component.SetEventListener(name, value == null ? null : Callback.From(value, _context, component));
+                component.SetEventListener(name, value == null ? null : Callback.From(
+                    _nativeEvents == null ? (object)value : _nativeEvents(value), _context, component));
             else if (name.StartsWith("data-", StringComparison.Ordinal)) component.SetData(name.Substring(5), value);
             else component.SetProperty(name, value);
         }

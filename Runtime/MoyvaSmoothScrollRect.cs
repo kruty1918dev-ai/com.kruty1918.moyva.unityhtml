@@ -14,6 +14,7 @@ namespace UnityHTML.Runtime
     /// reversals, where the pending step finishes instantly and the new input
     /// moves from it rather than drifting against the wheel.
     /// </summary>
+    [DefaultExecutionOrder(1100)]
     public class MoyvaSmoothScrollRect : SmoothScrollRect
     {
         private static readonly FieldInfo SmoothCoroutineField = typeof(SmoothScrollRect)
@@ -23,6 +24,42 @@ namespace UnityHTML.Runtime
 
         private UnityHtmlScrollSettings _settings = UnityHtmlScrollSettings.Default;
         private float _baseSensitivity = -1f;
+
+        bool _hasLayoutSnapshot;
+        Vector2 _lastNormalized, _lastVelocity, _lastScreen, _lastViewportSize, _lastContentSize;
+        Vector3 _lastScale;
+
+        // Canvas resize can change ScrollRect bounds before the host's reflow.
+        // Retain the last completed frame instead of reading that transient ratio.
+        internal void CaptureBeforeLayout(out Vector2 position, out Vector2 speed)
+        {
+            var window = new Vector2(Screen.width, Screen.height);
+            var viewportSize = viewport != null ? viewport.rect.size : ((RectTransform)transform).rect.size;
+            var contentSize = content != null ? content.rect.size : Vector2.zero;
+            bool changed = _hasLayoutSnapshot && (window != _lastScreen || viewportSize != _lastViewportSize
+                || contentSize != _lastContentSize || transform.lossyScale != _lastScale);
+            position = changed ? _lastNormalized : normalizedPosition;
+            speed = changed ? _lastVelocity : velocity;
+        }
+        internal void RememberLayoutState()
+        {
+            if (content == null) return;
+            _lastNormalized = normalizedPosition; _lastVelocity = velocity;
+            _lastScreen = new Vector2(Screen.width, Screen.height);
+            _lastViewportSize = viewport != null ? viewport.rect.size : ((RectTransform)transform).rect.size;
+            _lastContentSize = content.rect.size; _lastScale = transform.lossyScale;
+            _hasLayoutSnapshot = true;
+        }
+        protected override void LateUpdate()
+        {
+            base.LateUpdate();
+            RememberLayoutState();
+        }
+        protected override void OnDisable()
+        {
+            _hasLayoutSnapshot = false;
+            base.OnDisable();
+        }
 
         // The values UnityHtmlHost last pushed through ApplySettings. Settings are
         // per control instance — coroutine, target position and velocity never

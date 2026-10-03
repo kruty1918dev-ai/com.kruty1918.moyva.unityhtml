@@ -31,6 +31,13 @@ namespace UnityHTML.Runtime
         private GameObject _selectionBeforeAutofocus;
         private UnityHtmlScrollSettings _scrollSettings = UnityHtmlScrollSettings.Default;
         private UnityHtmlEnvironmentWatcher _environmentWatcher;
+        private UnityHtmlAdaptiveCanvas _adaptiveCanvas;
+        readonly Vector3[] _viewportCorners = new Vector3[4];
+        private bool _refreshingEnvironment;
+        public UnityHtmlViewport Viewport { get; private set; }
+        public event Action<UnityHtmlViewport> ViewportChanged;
+        /// <summary>Default automatic orientation of an existing screen CanvasScaler. Set before mount.</summary>
+        public bool AutoOrientCanvas { get; set; } = true;
         private readonly Dictionary<string, GameObject> _returnFocusSelections = new();
         private readonly UnityHtmlUiBridge _uiBridge;
         private readonly UnityHtmlHapticsBridge _hapticsBridge = new UnityHtmlHapticsBridge();
@@ -43,6 +50,13 @@ namespace UnityHTML.Runtime
         }
 
         public IUnityHtmlMotion Motion => _motion;
+
+        /// <summary>
+        /// Optional C# event binding for static HTML documents. Set before mounting.
+        /// When supplied, rendering never starts a JavaScript VM. Unknown expressions
+        /// must be rejected by the resolver rather than silently losing input.
+        /// </summary>
+        public Func<string, Delegate> NativeEventResolver { get; set; }
 
         public UnityHtmlScrollSettings ScrollSettings
         {
@@ -89,6 +103,7 @@ namespace UnityHTML.Runtime
                     UnityHtmlInput.BackRequested += OnGlobalBackRequested;
                 }
                 _root = root;
+                if(AutoOrientCanvas) _adaptiveCanvas=UnityHtmlAdaptiveCanvas.Acquire(root,this);
                 var guard = _root.gameObject.GetComponent<UnityHtmlReplacedElementGuard>();
                 if (guard == null)
                     guard = _root.gameObject.AddComponent<UnityHtmlReplacedElementGuard>();
@@ -123,12 +138,15 @@ namespace UnityHTML.Runtime
                 _motion.Attach(_root);
                 DetachUnsafeEditorAssemblyReloadDispose(_context);
 
+                _context.InsertStyle("scroll { min-width: 0; min-height: 0; flex-shrink: 1; } " +
+                    "switch { width: 124px; height: 68px; flex-shrink: 0; cursor: pointer; pointer-events: all; } " +
+                    "[data-layout=adaptive] { flex-direction: column; min-width: 0; } " +
+                    "@media (layout: wide) { [data-layout=adaptive] { flex-direction: row; flex-wrap: wrap; } }");
                 if (!string.IsNullOrWhiteSpace(document.Css))
                     _context.InsertStyle(document.Css);
 
-                _context.InsertStyle("switch { width: 124px; height: 68px; flex-shrink: 0; cursor: pointer; pointer-events: all; }");
-                _context.Start();
-                _tree = new UnityHtmlDocumentTree(_context);
+                if (NativeEventResolver == null) _context.Start();
+                _tree = new UnityHtmlDocumentTree(_context, NativeEventResolver);
                 _tree.ComponentRemoved = _motion.HandleComponentRemoved;
                 _tree.Update(document.Html);
                 DetachUnsafeEditorAssemblyReloadDispose(_context);
@@ -156,6 +174,9 @@ namespace UnityHTML.Runtime
             _root = null;
             _mountedCss = string.Empty;
             _tree = null;
+            Viewport = default;
+            if(_adaptiveCanvas != null) _adaptiveCanvas.Release(this);
+            _adaptiveCanvas = null;
             _seenScrollRects.Clear();
             if (_tooltips != null)
             {
@@ -171,11 +192,9 @@ namespace UnityHTML.Runtime
             _returnFocusSelections.Clear();
             if (_environmentWatcher != null)
             {
-                if (!EditorDomainUnloadInProgress())
-                {
-                    if (ShouldDestroyDeferred()) UnityEngine.Object.Destroy(_environmentWatcher);
-                    else UnityEngine.Object.DestroyImmediate(_environmentWatcher);
-                }
+                // Reuse the detached watcher on the next mount. Destroying it
+                // deferred can kill a freshly rebound watcher later this frame.
+                _environmentWatcher.Bind(null);
                 _environmentWatcher = null;
             }
 
@@ -365,6 +384,8 @@ namespace UnityHTML.Runtime
 
         private void CompleteLayoutPass()
         {
+            var viewportBefore = Viewport;
+            ApplyViewport();
             var scrollPositions = CaptureRenderedScrollPositions(_root);
             if (Application.isPlaying && _tooltips == null)
             {
@@ -380,6 +401,13 @@ namespace UnityHTML.Runtime
             _context.CalculateLayoutRecursively();
             _context.LateUpdateElementsRecursively();
             FlushReactElementLayout(_root);
+            // Safe-area padding writes into Yoga after sizes are computed —
+            // one extra pass applies them without another full layout cycle.
+            if (UnityHtmlElementEffects.Apply(_context, _root))
+            {
+                _context.CalculateLayoutRecursively();
+                FlushReactElementLayout(_root);
+            }
             // FlushReactElementLayout consumes HasNewLayout on every element, so the
             // ScrollContentResizer LateUpdate gate never fires — resize scroll content
             // here instead of waiting for a flag that is already cleared.
@@ -397,14 +425,8 @@ namespace UnityHTML.Runtime
             ApplyAutofocus();
             ApplyReturnFocus();
             UnityHtmlElementEffects.ApplyNavigation(_root);
-            // Safe-area padding writes into Yoga after sizes are computed —
-            // one extra pass applies them without another full layout cycle.
-            if (UnityHtmlElementEffects.Apply(_context, _root))
-            {
-                _context.CalculateLayoutRecursively();
-                FlushReactElementLayout(_root);
-            }
             _tooltips?.RefreshTargets();
+            if (!viewportBefore.Equals(Viewport)) ViewportChanged?.Invoke(Viewport);
 #if UNITY_EDITOR
             MarkEditorPreviewObjectsDontSave(_root);
 #endif
@@ -447,10 +469,10 @@ namespace UnityHTML.Runtime
                 if (scrollRect == null)
                     continue;
 
-                result.Add(new RenderedScrollPosition(
-                    scrollRect,
-                    scrollRect.normalizedPosition,
-                    scrollRect.velocity));
+                var position = scrollRect.normalizedPosition;
+                var velocity = scrollRect.velocity;
+                if (scrollRect is MoyvaSmoothScrollRect smooth) smooth.CaptureBeforeLayout(out position, out velocity);
+                result.Add(new RenderedScrollPosition(scrollRect, position, velocity));
             }
 
             return result;
@@ -516,16 +538,48 @@ namespace UnityHTML.Runtime
         // called by UnityHtmlEnvironmentWatcher; no document rebuild happens.
         internal void RefreshEnvironment()
         {
-            if (_root == null || _context == null)
+            if (_root == null || _context == null || _context.IsDisposed || _refreshingEnvironment)
                 return;
-            UnityHtmlElementEffects.ApplyNavigation(_root);
-            if (UnityHtmlElementEffects.Apply(_context, _root))
+            _refreshingEnvironment=true;
+            try
             {
-                _context.CalculateLayoutRecursively();
-                FlushReactElementLayout(_root);
-                Canvas.ForceUpdateCanvases();
+                CompleteLayoutPass();
+                BindSwitchMotion();
             }
+            finally { _refreshingEnvironment=false; }
         }
+
+        private void ApplyViewport()
+        {
+            var viewport=UnityHtmlViewport.Capture(_root,_viewportCorners);
+            if(!viewport.IsValid) return;
+            var changed=!Viewport.Equals(viewport);
+            Viewport=viewport;
+            if(!changed) return;
+            var media=_context.MediaProvider;
+            var batching=media as DefaultMediaProvider;
+            batching?.SetUpdatesSuspended(true);
+            try
+            {
+                media.RecalculateScreenAndDevices();
+                media.SetDimensions(viewport.Size.x,viewport.Size.y);
+                media.SetValue("layout",viewport.IsWide?"wide":"stacked");
+                media.SetNumber("safe-area-left",viewport.SafeInsets.x);
+                media.SetNumber("safe-area-bottom",viewport.SafeInsets.y);
+                media.SetNumber("safe-area-right",viewport.SafeInsets.z);
+                media.SetNumber("safe-area-top",viewport.SafeInsets.w);
+                SetViewportVariable("--uh-viewport-width",viewport.Size.x);
+                SetViewportVariable("--uh-viewport-height",viewport.Size.y);
+                SetViewportVariable("--uh-safe-left",viewport.SafeInsets.x);
+                SetViewportVariable("--uh-safe-bottom",viewport.SafeInsets.y);
+                SetViewportVariable("--uh-safe-right",viewport.SafeInsets.z);
+                SetViewportVariable("--uh-safe-top",viewport.SafeInsets.w);
+            }
+            finally { batching?.SetUpdatesSuspended(false); }
+            _context.Host.MarkForStyleResolving(true);
+        }
+        private void SetViewportVariable(string name,float value)
+            => _context.Host.Style[name]=value.ToString("0.###",CultureInfo.InvariantCulture)+"px";
 
         // data-return-focus marks a container (typically a modal/dialog) whose
         // disappearance restores the selection held when it appeared — the
@@ -656,6 +710,7 @@ namespace UnityHTML.Runtime
 
                 _scrollRect.normalizedPosition = _normalizedPosition;
                 _scrollRect.velocity = _velocity;
+                if (_scrollRect is MoyvaSmoothScrollRect smooth) smooth.RememberLayoutState();
             }
         }
 

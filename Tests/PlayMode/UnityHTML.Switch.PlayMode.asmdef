@@ -1,1 +1,12 @@
-{"name":"UnityHTML.Switch.PlayMode","references":["UnityHTML.Runtime","UnityEngine.UI"],"optionalUnityReferences":["TestAssemblies"],"autoReferenced":false}
+{
+  "name": "UnityHTML.Switch.PlayMode",
+  "references": [
+    "UnityHTML.Runtime",
+    "UnityEngine.UI",
+    "Unity.TextMeshPro"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "autoReferenced": false
+}

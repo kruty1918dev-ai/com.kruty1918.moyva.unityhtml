@@ -30,7 +30,7 @@ Three steps, all required:
 3. **UnityHTML itself:**
 
    ```json
-   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.1.0"
+   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.1.2"
    ```
 
    or Package Manager → **+** → **Add package from git URL** with the same
@@ -41,6 +41,74 @@ Three steps, all required:
 CSS presentation assets should be authored as plain CSS text with a Unity text extension, for example `HomeMenuShell.css.txt`. This keeps the file readable while ensuring Unity imports it as a populated `TextAsset`.
 
 The script engine is selected per platform: QuickJS everywhere except Linux (editor and standalone), which uses Jint. Keep `on*` callbacks to short expressions that behave identically on both engines — call into a C# bridge object rather than writing logic in markup.
+
+## Automatic resizing, tablets and safe area
+
+Mounted documents automatically observe their **container**, Canvas scale, window
+size and safe area. A resize, orientation change or split-screen resize refreshes
+media queries and layout without remounting the DOM. Native controls keep their
+identity, typed input and switch state; scroll position and velocity are restored
+after content sizing. Unchanged frames only compare a small geometry snapshot.
+A temporarily zero-sized window keeps the previous valid layout.
+
+An existing screen-space `CanvasScaler` in `ScaleWithScreenSize` mode automatically
+orients its authored reference resolution to the window. Multiple hosts share one
+policy; the last unmount restores the authored resolution. Designer changes are
+respected. World-space canvases and other scale modes are left alone. Set
+`host.AutoOrientCanvas = false` **before mounting** if your project already owns
+this policy. This does not change player orientation settings.
+
+Use percentage/flex sizes for fluid layouts. Fixed pixel sizes retain their authored
+meaning; the framework cannot infer a game's intended placement from arbitrary
+fixed coordinates. Standard width, height and orientation media queries refer to
+**container layout units**, not the physical device model. A built-in
+`@media (layout: wide)` matches width >= 960 units and aspect > 1.1. The default
+`data-layout="adaptive"` container stacks children on compact screens and uses a
+wrapping row in wide layouts; authored CSS can override either behavior.
+
+```html
+<view class="page" data-safe-area="all">
+  <view data-layout="adaptive"><button><text>Play</text></button><button><text>Collection</text></button></view>
+  <scroll class="content"><view><text>Scrollable content</text></view></scroll>
+</view>
+```
+
+```css
+.page { width: 100%; height: 100%; padding: 24px; }
+.content { flex-grow: 1; }
+@media (layout: wide) { .page { padding: 40px; } }
+```
+
+`data-safe-area="all"` (or `top|bottom|left|right`) adds insets to authored padding.
+Insets are converted to layout units and measured relative to the host: a native
+parent already inside the safe area receives no duplicate inset. Nested marked
+containers reserve each edge once. Unmarked backgrounds remain full bleed.
+World-space canvases and secondary displays have no mobile notch inset.
+Root CSS variables are updated automatically: `--uh-viewport-width`,
+`--uh-viewport-height`, `--uh-safe-left`, `--uh-safe-bottom`, `--uh-safe-right`,
+`--uh-safe-top`. Corresponding `safe-area-*` numeric media features are available.
+
+`UnityHtmlHost.Viewport` exposes `Size`, `ScreenSize`, `ScreenRect`, `SafeInsets`,
+`PixelScale`, `IsValid`, `IsLandscape` and `IsWide`. Optional `ViewportChanged` runs
+**after** layout, safe padding and scroll restoration. Use it when a game needs to
+fit a world camera around its UI; normal UI resizing needs no C# polling.
+
+## Native C# callbacks (IL2CPP-friendly static documents)
+
+Set `host.NativeEventResolver` before mounting to render without starting a
+JavaScript VM. The resolver maps an exact expression to a compatible delegate;
+reject unknown expressions instead of silently ignoring them.
+
+```csharp
+host.NativeEventResolver = expression => expression == "play"
+    ? (System.Action)(() => StartGame())
+    : throw new System.InvalidOperationException("Unknown UI callback: " + expression);
+host.Mount(root, new UnityHtmlDocument("<button onClick='play'><text>Play</text></button>", css, "Menu"));
+```
+
+Native mode rejects `<script>`. It is intended for static documents with C# state
+and reconciliation. Existing script-driven documents keep their engine behavior.
+No JavaScript expressions are evaluated in native mode.
 
 ## Quick start — empty scene to a working button
 
@@ -288,5 +356,5 @@ ReactUnity Core and QuickJS stay as commit-pinned UPM git dependencies. Unity mu
 `main` is wired to CI that auto-tags releases: bump `"version"` in
 `package.json`, push to `main`, and the `UPM release` workflow tags
 `v<version>` automatically. Consumers pinned to a tag
-(`...git#v0.1.0`) upgrade by changing the tag in `manifest.json`;
+(`...git#v0.1.2`) upgrade by changing the tag in `manifest.json`;
 consumers on `...git` (HEAD) get the latest `main` on next resolve.
