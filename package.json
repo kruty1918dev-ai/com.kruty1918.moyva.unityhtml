@@ -1,8 +1,8 @@
 {
   "name": "com.kruty1918.moyva.unityhtml",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "displayName": "Moyva UnityHTML",
-  "description": "HTML-driven native Unity presentation framework and migration tooling.",
+  "description": "HTML-driven native Unity UI with adaptive layout, input, controls and safe localized remote documents.",
   "unity": "6000.3",
   "author": {
     "name": "Kruty1918"
@@ -11,6 +11,15 @@
     "com.reactunity.core": "0.23.2",
     "com.reactunity.jint": "0.23.2",
     "com.reactunity.quickjs": "0.23.2",
-    "com.unity.ugui": "2.0.0"
-  }
+    "com.unity.ugui": "2.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0"
+  },
+  "documentationUrl": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml/blob/main/README.md",
+  "samples": [
+    {
+      "displayName": "Remote documents",
+      "description": "Safe native reader with a bundled draft, HTTPS/API sources and locale selection.",
+      "path": "Samples~/RemoteDocuments"
+    }
+  ]
 }

@@ -30,7 +30,7 @@ Three steps, all required:
 3. **UnityHTML itself:**
 
    ```json
-   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.1.4"
+   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.2.0"
    ```
 
    or Package Manager → **+** → **Add package from git URL** with the same
@@ -41,6 +41,18 @@ Three steps, all required:
 CSS presentation assets should be authored as plain CSS text with a Unity text extension, for example `HomeMenuShell.css.txt`. This keeps the file readable while ensuring Unity imports it as a populated `TextAsset`.
 
 The script engine is selected per platform: QuickJS everywhere except Linux (editor and standalone), which uses Jint. Keep `on*` callbacks to short expressions that behave identically on both engines — call into a C# bridge object rather than writing logic in markup.
+
+## Remote text, APIs and legal documents
+
+Load text, a website document region or a JSON API into a native scrollable field.
+Approved locale variants follow your localization module; changed content receives
+local typography automatically. The reader retains the original body, checks cache
+integrity, bounds HTTPS requests and keeps scripts out of the UI. First-run policy
+acknowledgement remains separate from optional analytics/advertising consent.
+
+Start with the importable **Remote documents** sample and the
+[remote content quick start and complete guide](Documentation~/remote-content.md).
+The bundled sample is a labelled draft with no server required.
 
 ## Automatic resizing, tablets and safe area
 
@@ -366,5 +378,5 @@ ReactUnity Core and QuickJS stay as commit-pinned UPM git dependencies. Unity mu
 `main` is wired to CI that auto-tags releases: bump `"version"` in
 `package.json`, push to `main`, and the `UPM release` workflow tags
 `v<version>` automatically. Consumers pinned to a tag
-(`...git#v0.1.4`) upgrade by changing the tag in `manifest.json`;
+(`...git#v0.2.0`) upgrade by changing the tag in `manifest.json`;
 consumers on `...git` (HEAD) get the latest `main` on next resolve.

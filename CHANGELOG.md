@@ -1,3 +1,13 @@
+# 0.2.0
+
+- Safe native remote document reader: UTF-8 text, scoped HTML or versioned JSON API, retaining original words and body.
+- Exact HTTPS origin allow-list, redirects disabled, bounded downloads, timeouts and cancellable request ownership.
+- Automatic approved-locale selection, source-language reporting, network refresh, version/content hashes, verified age-limited cache and bundled fallback.
+- Native text blocks escape markup and disable TMP rich text; local CSS styles new paragraphs without executing website scripts.
+- Reusable content binding with latest-request ownership and explicit original-source links.
+- Importable Remote documents sample and complete quick start covering localization, legal acknowledgement, offline operation and limitations.
+- Editor regression coverage for origin rejection, HTML/API fidelity, updates, cache corruption, limits and cancellation.
+
 # 0.1.3
 
 - Optional typed Unity Input System backend: touch, mouse, gamepad and back detection work in Input System-only players and survive IL2CPP stripping.
