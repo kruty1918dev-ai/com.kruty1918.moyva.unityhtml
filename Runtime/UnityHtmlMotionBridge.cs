@@ -285,8 +285,13 @@ namespace UnityHTML.Runtime
             _active[id] = motion;
             sequence.OnKill(() =>
             {
+                // A recyclable DOTween sequence can be reused by another host
+                // immediately. Release both ownership and the reference before
+                // exit callbacks reconcile the document or start another motion.
+                motion.Tween = null;
                 if (_active.TryGetValue(id, out ActiveMotion current) && ReferenceEquals(current, motion))
                     _active.Remove(id);
+                motion.FinishExit?.Invoke();
             });
             if (isExit)
             {
@@ -304,7 +309,6 @@ namespace UnityHTML.Runtime
                 }
                 motion.FinishExit = FinishExit;
                 sequence.OnComplete(FinishExit);
-                sequence.OnKill(FinishExit);
             }
         }
 

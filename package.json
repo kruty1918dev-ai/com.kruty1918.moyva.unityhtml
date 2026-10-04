@@ -1,6 +1,6 @@
 {
   "name": "com.kruty1918.moyva.unityhtml",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "displayName": "Moyva UnityHTML",
   "description": "HTML-driven native Unity UI with adaptive layout, input, controls and safe localized remote documents.",
   "unity": "6000.3",

@@ -30,7 +30,7 @@ Three steps, all required:
 3. **UnityHTML itself:**
 
    ```json
-   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.2.0"
+   "com.kruty1918.moyva.unityhtml": "https://github.com/kruty1918dev-ai/com.kruty1918.moyva.unityhtml.git#v0.2.1"
    ```
 
    or Package Manager → **+** → **Add package from git URL** with the same
@@ -378,5 +378,5 @@ ReactUnity Core and QuickJS stay as commit-pinned UPM git dependencies. Unity mu
 `main` is wired to CI that auto-tags releases: bump `"version"` in
 `package.json`, push to `main`, and the `UPM release` workflow tags
 `v<version>` automatically. Consumers pinned to a tag
-(`...git#v0.2.0`) upgrade by changing the tag in `manifest.json`;
+(`...git#v0.2.1`) upgrade by changing the tag in `manifest.json`;
 consumers on `...git` (HEAD) get the latest `main` on next resolve.

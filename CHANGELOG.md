@@ -1,3 +1,9 @@
+# 0.2.1
+
+- Completed exit animations release their ownership and recyclable DOTween references before reconciliation. Closing a page can no longer cancel a newly mounted header in another host and leave controls invisible.
+- Preserve exactly-once exit completion on normal finish, cancellation, reduced motion and teardown.
+- Regression tests cover completed exit cleanup and sequence reuse across hosts.
+
 # 0.2.0
 
 - Safe native remote document reader: UTF-8 text, scoped HTML or versioned JSON API, retaining original words and body.

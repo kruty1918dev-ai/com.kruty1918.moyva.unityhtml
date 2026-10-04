@@ -38,6 +38,62 @@ namespace UnityHTML.Tests
                 id, target, "fade", 0.12f, 0f, 0f, Ease.OutCubic, false,
             });
 
+        private static System.Collections.IDictionary Active(UnityHtmlMotionBridge bridge)
+            => (System.Collections.IDictionary)typeof(UnityHtmlMotionBridge)
+                .GetField("_active", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(bridge);
+
+        private static Tween Current(UnityHtmlMotionBridge bridge)
+        {
+            foreach (System.Collections.DictionaryEntry entry in Active(bridge))
+                return (Tween)entry.Value.GetType().GetProperty("Tween").GetValue(entry.Value);
+            return null;
+        }
+
+        [Test]
+        public void CompletedExitReleasesOwnershipBeforeSequenceCanBeRecycled()
+        {
+            var bridge = new UnityHtmlMotionBridge();
+            var go = new GameObject("exit-target", typeof(RectTransform));
+            int calls = 0;
+            bridge.ExitFinished += _ => calls++;
+            try
+            {
+                PlayExit(bridge, "panel", (RectTransform)go.transform);
+                Current(bridge).Complete(true);
+                Assert.AreEqual(1, calls);
+                Assert.AreEqual(0, Active(bridge).Count,
+                    "A completed exit must release its recyclable tween, just like an entry.");
+                bridge.Stop("panel");
+                Assert.AreEqual(1, calls);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void StaleExitCleanupCannotKillAnEntryOwnedByAnotherHost()
+        {
+            var exiting = new UnityHtmlMotionBridge();
+            var entering = new UnityHtmlMotionBridge();
+            var sheet = new GameObject("sheet", typeof(RectTransform));
+            var header = new GameObject("header", typeof(RectTransform));
+            try
+            {
+                PlayExit(exiting, "panel", (RectTransform)sheet.transform);
+                Current(exiting).Complete(true);
+                PlayEnter(entering, "header", (RectTransform)header.transform);
+                var entry = Current(entering);
+                exiting.Stop("panel");
+                Assert.IsTrue(entry.IsActive(), "Old sheet cleanup must not kill the new header animation.");
+                entry.Complete(true);
+                Assert.AreEqual(1f, header.GetComponent<CanvasGroup>().alpha);
+            }
+            finally
+            {
+                exiting.Detach(); entering.Detach();
+                UnityEngine.Object.DestroyImmediate(sheet); UnityEngine.Object.DestroyImmediate(header);
+            }
+        }
+
         [Test]
         public void Exit_CancelledMidFlight_FiresExitFinishedOnce()
         {
