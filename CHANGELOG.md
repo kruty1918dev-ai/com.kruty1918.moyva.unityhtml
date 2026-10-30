@@ -1,3 +1,16 @@
+# Unreleased
+
+- `UnityHtmlHost.SetStyle` overrides one XML inline property on an existing
+  component, preserving other declarations and rejecting foreign documents.
+- External style updates request a coalesced native layout flush through
+  `InvalidateLayout`; idle frames don't reparse or remount documents.
+- Layout application reuses its element list instead of allocating an array
+  for each animated frame.
+- Verified in an isolated QuietCamp native PlayMode regression: an absolute
+  label moves, retains its instance and position across three sibling text
+  updates, and twenty invalidations don't mount the document again. This is
+  targeted UI coverage, not mobile performance or full package acceptance.
+
 # 0.2.1
 
 - Completed exit animations release their ownership and recyclable DOTween references before reconciliation. Closing a page can no longer cancel a newly mounted header in another host and leave controls invisible.

@@ -41,7 +41,10 @@ namespace UnityHTML.Runtime
             var viewport = UnityHtmlViewport.Capture(_root,_corners);
             if(!viewport.IsValid) return; // Android's first frame/minimized window
             if (!_dirty && orientation == _orientation && safeArea == _safeArea && viewport.Equals(_viewport))
+            {
+                _host.FlushPendingLayout();
                 return;
+            }
             _dirty = false;
             _orientation = orientation;
             _safeArea = safeArea;

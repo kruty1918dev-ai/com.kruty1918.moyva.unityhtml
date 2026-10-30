@@ -1,5 +1,13 @@
 # Moyva UnityHTML
 
+Use `UnityHtmlHost.SetStyle(component, "left", x)` to animate a mounted component
+without rebuilding HTML. It overrides the corresponding XML inline declaration
+while retaining other properties. For direct style writes that aren't shadowed
+by XML attributes, call `InvalidateLayout()` after the writes. Requests
+coalesce into one layout flush in the environment watcher's late frame tick;
+unchanged frames do no extra layout work. This preserves the native document
+and element identities. `Mount` remains the operation for changed markup/CSS.
+
 ![UPM package](https://img.shields.io/badge/UPM-package-blue)
 ![version](https://img.shields.io/github/v/tag/kruty1918dev-ai/com.kruty1918.moyva.unityhtml?label=version&sort=semver)
 

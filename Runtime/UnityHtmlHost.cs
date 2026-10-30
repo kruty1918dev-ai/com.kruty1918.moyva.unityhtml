@@ -34,6 +34,8 @@ namespace UnityHTML.Runtime
         private UnityHtmlAdaptiveCanvas _adaptiveCanvas;
         readonly Vector3[] _viewportCorners = new Vector3[4];
         private bool _refreshingEnvironment;
+        private bool _layoutDirty;
+        private readonly List<ReactElement> _layoutElements = new();
         public UnityHtmlViewport Viewport { get; private set; }
         public event Action<UnityHtmlViewport> ViewportChanged;
         /// <summary>Default automatic orientation of an existing screen CanvasScaler. Set before mount.</summary>
@@ -167,6 +169,8 @@ namespace UnityHTML.Runtime
 
         public void Unmount()
         {
+            _layoutDirty = false;
+            _layoutElements.Clear();
             UnityHtmlInput.BackRequested -= OnGlobalBackRequested;
             var context = _context;
             var root = _root;
@@ -384,6 +388,7 @@ namespace UnityHTML.Runtime
 
         private void CompleteLayoutPass()
         {
+            _layoutDirty = false;
             var viewportBefore = Viewport;
             ApplyViewport();
             var scrollPositions = CaptureRenderedScrollPositions(_root);
@@ -547,6 +552,42 @@ namespace UnityHTML.Runtime
                 BindSwitchMotion();
             }
             finally { _refreshingEnvironment=false; }
+        }
+
+        /// <summary>Coalesce externally changed component styles into one native
+        /// layout pass before paint, without parsing or reconciling a document.</summary>
+        public void InvalidateLayout()
+        {
+            if (_context != null && !_context.IsDisposed) _layoutDirty = true;
+        }
+
+        /// <summary>Animate one style property on an existing component. XML
+        /// style attributes are scoped stylesheets in ReactUnity and otherwise
+        /// outrank component.Style; release only this property's declaration.</summary>
+        public bool SetStyle(UGUIComponent component, string property, object value)
+        {
+            if (_context == null || _context.IsDisposed || component == null) return false;
+            if (component.Context != _context) return false;
+            var key = CssProperties.GetProperty(property);
+            if (key == null) throw new ArgumentException("A registered longhand style property is required.", nameof(property));
+            component.Style[property] = value;
+            if (component.InlineStylesheet != null)
+                foreach (var declaration in component.InlineStylesheet.Declarations)
+                    declaration.Item2.Remove(key);
+            component.MarkForStyleResolving(false);
+            InvalidateLayout();
+            return true;
+        }
+
+        internal void FlushPendingLayout()
+        {
+            if (!_layoutDirty) return;
+            _layoutDirty = false;
+            if (_root == null || _context == null || _context.IsDisposed) return;
+            _context.UpdateElementsRecursively();
+            _context.CalculateLayoutRecursively();
+            _context.LateUpdateElementsRecursively();
+            FlushReactElementLayout(_root);
         }
 
         private void ApplyViewport()
@@ -821,15 +862,15 @@ namespace UnityHTML.Runtime
 #endif
         }
 
-        private static void FlushReactElementLayout(RectTransform root)
+        private void FlushReactElementLayout(RectTransform root)
         {
             if (root == null)
                 return;
 
-            var elements = root.GetComponentsInChildren<ReactElement>(true);
-            for (var i = 0; i < elements.Length; i++)
+            root.GetComponentsInChildren(true, _layoutElements);
+            for (var i = 0; i < _layoutElements.Count; i++)
             {
-                var element = elements[i];
+                var element = _layoutElements[i];
                 var layout = element != null ? element.Layout : null;
                 var transform = element != null ? element.transform as RectTransform : null;
                 if (layout == null || !layout.HasNewLayout || !element.enabled || transform == null || float.IsNaN(layout.LayoutWidth))
