@@ -877,9 +877,15 @@ namespace UnityHTML.Runtime
                     continue;
 
                 var pivotDiff = transform.pivot - Vector2.up;
+                // Match ReactElement's native positioning: the final flush
+                // must not discard percentage/pixel translate after its earlier
+                // LateUpdate, or a moving anchor jumps by half its own size.
+                var translate = element.Translate;
                 transform.anchoredPosition = new Vector2(
-                    layout.LayoutLeft + pivotDiff.x * layout.LayoutWidth,
-                    -layout.LayoutTop + pivotDiff.y * layout.LayoutHeight);
+                    layout.LayoutLeft + pivotDiff.x * layout.LayoutWidth
+                        + translate.X.GetPointValue(layout.LayoutWidth, 0),
+                    -layout.LayoutTop + pivotDiff.y * layout.LayoutHeight
+                        - translate.Y.GetPointValue(layout.LayoutHeight, 0));
                 transform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, layout.LayoutWidth);
                 transform.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, layout.LayoutHeight);
                 layout.MarkLayoutSeen();

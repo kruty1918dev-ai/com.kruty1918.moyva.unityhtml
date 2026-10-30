@@ -1,5 +1,9 @@
 # Unreleased
 
+- Native layout flush now retains `ReactElement.Translate` in pixels/percent.
+  An animated absolute element keeps its real center instead of jumping by
+  half its dimensions; the stronger Game View regression checks absolute
+  centers before movement, after movement and throughout sibling refreshes.
 - `UnityHtmlHost.SetStyle` overrides one XML inline property on an existing
   component, preserving other declarations and rejecting foreign documents.
 - External style updates request a coalesced native layout flush through
